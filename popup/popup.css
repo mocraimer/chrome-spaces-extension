@@ -180,6 +180,19 @@ section:last-of-type {
   white-space: nowrap;
 }
 
+.delete-btn {
+  background-color: var(--error-color);
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: white;
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.delete-btn:hover {
+  background-color: #d32f2f;
+}
+
 footer {
   display: flex;
   justify-content: space-between;

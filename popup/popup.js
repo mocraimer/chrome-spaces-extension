@@ -212,6 +212,7 @@ async function renderActiveSpaces(searchTerm) {
       <div class="space-info">${space.urls?.length || 0} tabs</div>
       ${!isCurrentSpace ? `
         <div class="space-actions">
+          <button class="delete-btn" title="Delete Space">×</button>
           <button class="${windowExists ? 'switch-btn' : 'restore-btn'}" data-id="${space.id}">
             ${windowExists ? 'Switch' : 'Restore'}
           </button>
@@ -219,9 +220,65 @@ async function renderActiveSpaces(searchTerm) {
       ` : ''}
     `;
     
-    // Add event listener for action button
-    if (!isCurrentSpace) {
-      const actionBtn = spaceItem.querySelector('button');
+      // Add event listeners for buttons
+      if (!isCurrentSpace) {
+        const deleteBtn = spaceItem.querySelector('.delete-btn');
+        const actionBtn = spaceItem.querySelector('.switch-btn, .restore-btn');
+        
+        // Delete button handler
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          
+          // Check if the space is active or closed
+          const isActive = space.id in spaces;
+          
+          if (isActive) {
+            // For active spaces, close the window first
+            const closeResult = await chrome.runtime.sendMessage({
+              action: 'closeSpace',
+              windowId: space.id
+            });
+            
+            if (!closeResult) {
+              // Show error notification
+              const notification = document.createElement('div');
+              notification.className = 'notification error';
+              notification.textContent = `Failed to close space "${space.name}"`;
+              document.body.appendChild(notification);
+              setTimeout(() => notification.remove(), 3000);
+              return;
+            }
+          }
+          
+          // Then remove from spaces (whether it was active or closed)
+          const removeResult = await chrome.runtime.sendMessage({
+            action: 'removeClosedSpace',
+            spaceId: space.id
+          });
+          
+          if (removeResult) {
+            // Show success notification
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = `Space "${space.name}" deleted`;
+            document.body.appendChild(notification);
+            
+            // Refresh the UI
+            await loadSpaces();
+            await renderSpaces();
+            updateSelectedSpace(0);
+            
+            // Remove notification after delay
+            setTimeout(() => notification.remove(), 3000);
+          } else {
+            // Show error notification
+            const notification = document.createElement('div');
+            notification.className = 'notification error';
+            notification.textContent = `Failed to delete space "${space.name}"`;
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 3000);
+          }
+        });
       actionBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         console.log(`Action clicked for space:`, {

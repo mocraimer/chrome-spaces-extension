@@ -316,6 +316,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "windowExists":
           sendResponse(await SpacesManager._windowExists(Number(request.windowId)));
           break;
+        case "closeSpace":
+          try {
+            const windowId = Number(request.windowId);
+            // Get window info before closing
+            const window = await chrome.windows.get(windowId, { populate: true });
+            const activeSpace = SpacesManager._spaces[windowId];
+            
+            // First store the space data
+            if (activeSpace) {
+              SpacesManager._closedSpaces[windowId] = {
+                id: windowId,
+                name: activeSpace.name,
+                urls: window.tabs.map(tab => tab.url || '').filter(Boolean),
+                lastModified: Date.now()
+              };
+              delete SpacesManager._spaces[windowId];
+              await SpacesManager._saveToStorage();
+            }
+            
+            // Then close the window
+            await chrome.windows.remove(windowId);
+            sendResponse(true);
+          } catch (error) {
+            console.error('Error closing window:', error);
+            sendResponse(false);
+          }
+          break;
+        case "removeClosedSpace":
+          sendResponse(await SpacesManager.removeClosedSpace(request.spaceId));
+          break;
         case "getDebugData":
           sendResponse({
             currentState: {
