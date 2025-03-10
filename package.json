@@ -1,0 +1,29 @@
+{
+  "name": "chrome-spaces",
+  "version": "1.0.0",
+  "description": "A Chrome extension for managing windows as workspaces",
+  "private": true,
+  "scripts": {
+    "build": "zip -r chrome-spaces.zip . -x '*.git*' 'node_modules/*' 'package*' '*.zip'",
+    "lint": "eslint . --ext .js",
+    "format": "prettier --write '**/*.{js,css,html,json}'",
+    "dev": "web-ext run --source-dir=."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/chrome-spaces.git"
+  },
+  "keywords": [
+    "chrome-extension",
+    "tabs",
+    "workspace",
+    "productivity"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "prettier": "^2.8.0",
+    "web-ext": "^7.0.0"
+  }
+}

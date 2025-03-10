@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chrome Spaces Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Chrome Spaces Options</h1>
+      <p>Configure your workspace manager settings</p>
+    </header>
+    
+    <section id="keyboard-shortcuts">
+      <h2>Keyboard Shortcuts</h2>
+      <p>Configure keyboard shortcuts in Chrome by visiting:</p>
+      <p><code>chrome://extensions/shortcuts</code></p>
+      <button id="go-to-shortcuts">Go to Shortcuts</button>
+      
+      <div class="shortcut-list">
+        <div class="shortcut-item">
+          <div class="shortcut-info">
+            <h3>Open Spaces Popup</h3>
+            <p>Default: <code>Ctrl+Shift+Space</code> (Windows/Linux) or <code>Command+Shift+Space</code> (Mac)</p>
+          </div>
+        </div>
+        
+        <div class="shortcut-item">
+          <div class="shortcut-info">
+            <h3>Switch to Next Space</h3>
+            <p>Default: <code>Ctrl+Shift+Right</code> (Windows/Linux) or <code>Command+Shift+Right</code> (Mac)</p>
+          </div>
+        </div>
+        
+        <div class="shortcut-item">
+          <div class="shortcut-info">
+            <h3>Switch to Previous Space</h3>
+            <p>Default: <code>Ctrl+Shift+Left</code> (Windows/Linux) or <code>Command+Shift+Left</code> (Mac)</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <section id="general-settings">
+      <h2>General Settings</h2>
+      
+      <div class="setting-item">
+        <label for="default-space-name">Default Space Name</label>
+        <input type="text" id="default-space-name" value="Untitled Space">
+      </div>
+      
+      <div class="setting-item">
+        <label for="auto-save-interval">Auto-save Interval (seconds)</label>
+        <input type="number" id="auto-save-interval" min="5" max="300" value="60">
+      </div>
+      
+      <div class="setting-item checkbox">
+        <input type="checkbox" id="track-closed-tabs" checked>
+        <label for="track-closed-tabs">Track closed tabs for each space</label>
+      </div>
+      
+      <div class="setting-item checkbox">
+        <input type="checkbox" id="confirm-window-close" checked>
+        <label for="confirm-window-close">Confirm before closing a space</label>
+      </div>
+    </section>
+    
+    <section id="data-management">
+      <h2>Data Management</h2>
+      
+      <div class="button-group">
+        <button id="export-data">Export All Spaces Data</button>
+        <button id="import-data">Import Spaces Data</button>
+        <input type="file" id="import-file" accept=".json" style="display: none;">
+      </div>
+      
+      <div class="danger-zone">
+        <h3>Danger Zone</h3>
+        <button id="clear-data" class="danger">Clear All Spaces Data</button>
+      </div>
+    </section>
+
+    <section id="closed-spaces">
+      <h2>Closed Spaces</h2>
+      <div class="closed-spaces-list" id="closed-spaces-list">
+        <!-- Closed spaces will be populated here dynamically -->
+      </div>
+    </section>
+
+    <section id="debug-info">
+      <h2>Debug Information</h2>
+      
+      <div class="debug-controls">
+        <button id="refresh-debug">Refresh State Data</button>
+      </div>
+
+      <div class="debug-data">
+        <h3>Current State</h3>
+        <pre id="current-state"></pre>
+      </div>
+    </section>
+    
+    <footer>
+      <button id="save-settings" class="primary">Save Settings</button>
+      <button id="reset-settings">Reset to Defaults</button>
+    </footer>
+  </div>
+  
+  <script src="options.js"></script>
+</body>
+</html>
