@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chrome Spaces</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Chrome Spaces</h1>
+      <div class="search-container">
+        <input type="text" id="search-input" placeholder="Search spaces..." autofocus>
+      </div>
+    </header>
+    
+    <div class="current-space">
+      <h2>Current Space</h2>
+      <div class="space-name-container">
+        <input type="text" id="current-space-name" placeholder="Untitled Space">
+        <button id="rename-space-btn">Rename</button>
+      </div>
+    </div>
+    
+    <section id="active-spaces">
+      <h2>Spaces</h2>
+      <ul id="active-spaces-list" class="spaces-list">
+        <!-- Will be populated by JavaScript -->
+      </ul>
+    </section>
+    
+    <section id="move-tab">
+      <h2>Move Current Tab To</h2>
+      <ul id="move-tab-list" class="spaces-list">
+        <!-- Will be populated by JavaScript -->
+      </ul>
+    </section>
+    
+    <footer>
+      <a href="../options/options.html" target="_blank">Options</a>
+      <span>Chrome Spaces v1.0.0</span>
+    </footer>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

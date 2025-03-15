@@ -1,0 +1,169 @@
+import { TabManager as ITabManager } from '@/shared/types/Services';
+import { executeChromeApi } from '@/shared/utils';
+import { TAB_LOAD_TIMEOUT } from '@/shared/constants';
+
+export class TabManager implements ITabManager {
+  /**
+   * Get all tabs in a window
+   */
+  async getTabs(windowId: number): Promise<chrome.tabs.Tab[]> {
+    return executeChromeApi(
+      () => chrome.tabs.query({ windowId }),
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Create a new tab in a window
+   */
+  async createTab(windowId: number, url: string): Promise<chrome.tabs.Tab> {
+    return executeChromeApi(
+      () => chrome.tabs.create({ windowId, url }),
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Move a tab to a different window
+   */
+  async moveTab(tabId: number, windowId: number): Promise<chrome.tabs.Tab> {
+    return executeChromeApi(
+      async () => {
+        const tab = await chrome.tabs.get(tabId);
+        
+        // If tab is already in the target window, just return it
+        if (tab.windowId === windowId) {
+          return tab;
+        }
+
+        // Move the tab to the new window
+        await chrome.tabs.move(tabId, { windowId, index: -1 });
+        
+        // Get updated tab info
+        return chrome.tabs.get(tabId);
+      },
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Remove a tab
+   */
+  async removeTab(tabId: number): Promise<void> {
+    await executeChromeApi(
+      () => chrome.tabs.remove(tabId),
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Update tab properties
+   */
+  async updateTab(
+    tabId: number,
+    updateProperties: chrome.tabs.UpdateProperties
+  ): Promise<chrome.tabs.Tab> {
+    return executeChromeApi(
+      () => chrome.tabs.update(tabId, updateProperties),
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Wait for a tab to finish loading
+   */
+  async waitForTabLoad(tabId: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Tab load timeout'));
+      }, TAB_LOAD_TIMEOUT);
+
+      const listener = (
+        changedTabId: number,
+        changeInfo: chrome.tabs.TabChangeInfo
+      ) => {
+        if (changedTabId === tabId && changeInfo.status === 'complete') {
+          cleanup();
+          resolve();
+        }
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+      };
+
+      chrome.tabs.onUpdated.addListener(listener);
+    });
+  }
+
+  /**
+   * Get the active tab in a window
+   */
+  async getActiveTab(windowId: number): Promise<chrome.tabs.Tab | undefined> {
+    const [tab] = await executeChromeApi(
+      () => chrome.tabs.query({ active: true, windowId }),
+      'TAB_ERROR'
+    );
+    return tab;
+  }
+
+  /**
+   * Move multiple tabs to a window
+   */
+  async moveTabs(
+    tabIds: number[],
+    windowId: number
+  ): Promise<chrome.tabs.Tab[]> {
+    return executeChromeApi(
+      async () => {
+        const movedTabs = await chrome.tabs.move(tabIds, {
+          windowId,
+          index: -1
+        });
+        
+        // Return array of moved tabs
+        return Array.isArray(movedTabs) ? movedTabs : [movedTabs];
+      },
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Duplicate a tab
+   */
+  async duplicateTab(tabId: number): Promise<chrome.tabs.Tab> {
+    return executeChromeApi(
+      async () => {
+        const duplicatedTab = await chrome.tabs.duplicate(tabId);
+        if (!duplicatedTab) {
+          throw new Error('Failed to duplicate tab');
+        }
+        return duplicatedTab;
+      },
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Reload a tab
+   */
+  async reloadTab(tabId: number): Promise<void> {
+    await executeChromeApi(
+      () => chrome.tabs.reload(tabId),
+      'TAB_ERROR'
+    );
+  }
+
+  /**
+   * Get tab URL safely (handling chrome:// URLs)
+   */
+  getTabUrl(tab: chrome.tabs.Tab): string {
+    // Chrome API doesn't expose URL for chrome:// pages
+    if (tab.url && !tab.url.startsWith('chrome://')) {
+      return tab.url;
+    }
+    return tab.pendingUrl || '';
+  }
+}
