@@ -14,10 +14,10 @@
     "commands"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "dist/background.js"
   },
   "action": {
-    "default_popup": "popup/popup.html",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -29,7 +29,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "options_page": "options/options.html",
+  "options_page": "options.html",
   "commands": {
     "_execute_action": {
       "suggested_key": {

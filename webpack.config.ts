@@ -4,15 +4,17 @@ import HtmlWebpackPlugin from 'html-webpack-plugin';
 import * as webpack from 'webpack';
 
 const config: webpack.Configuration = {
+  devtool: process.env.NODE_ENV === 'production' ? false : 'source-map',
   mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
   entry: {
-    popup: path.join(__dirname, 'popup/popup.js'),
-    options: path.join(__dirname, 'options/options.js'),
-    background: path.join(__dirname, 'background.js'),
+    popup: path.join(__dirname, '/src/popup/index.tsx'),
+    options: path.join(__dirname, '/src/options/index.tsx'),
+    background: path.join(__dirname, '/src/background/index.ts'),
   },
   output: {
     path: path.join(__dirname, 'dist'),
     filename: '[name].js',
+    clean: true, // Clean the output directory before emit
   },
   module: {
     rules: [
@@ -35,17 +37,22 @@ const config: webpack.Configuration = {
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: 'popup/popup.html',
+      template: path.join(__dirname, 'src/popup/index.html'),
       filename: 'popup.html',
       chunks: ['popup'],
     }),
     new HtmlWebpackPlugin({
-      template: 'options/options.html',
+      template: path.join(__dirname, 'src/options/index.html'),
       filename: 'options.html',
       chunks: ['options'],
     }),
     new CopyPlugin({
-      patterns: [{ from: 'manifest.json', to: '.' }],
+      patterns: [
+        { from: 'manifest.json', to: '.' },
+        { from: 'icons', to: 'icons' },
+        // Don't copy source maps in production
+        ...(process.env.NODE_ENV === 'production' ? [] : [{ from: 'src/**/*.map', to: '[name][ext]' }])
+      ],
     }),
   ],
 };

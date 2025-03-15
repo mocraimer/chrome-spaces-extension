@@ -2,8 +2,9 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/chrome-spaces/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Chrome Web Store](https://img.shields.io/badge/chrome%20web%20store-available-brightgreen.svg)](https://chrome.google.com/webstore/detail/your-extension-id)
 
-Chrome Spaces is a workspace manager for Chrome that treats each browser window as a different named workspace, helping you organize your tabs and manage multiple projects efficiently. Inspired by [Spaces](https://github.com/deanoemcke/spaces) by Dean Oemcke, this extension has been rebuilt with modern Chrome APIs and enhanced features.
+Chrome Spaces is a workspace manager for Chrome that treats each browser window as a different named workspace, helping you organize your tabs and manage multiple projects efficiently. Inspired by [Spaces](https://github.com/deanoemcke/spaces) by Dean Oemcke, this extension has been rebuilt with modern Chrome APIs, TypeScript, and React for enhanced features and maintainability.
 
 ## Features
 
@@ -14,6 +15,7 @@ Chrome Spaces is a workspace manager for Chrome that treats each browser window 
 - Fast fuzzy search for spaces with keyboard navigation
 - Track tabs opened and closed within each workspace
 - Configurable settings and keyboard shortcuts
+- Built with TypeScript and React for a modern codebase
 
 ## Installation
 
@@ -27,7 +29,7 @@ Chrome Spaces is a workspace manager for Chrome that treats each browser window 
 
 ### From Chrome Web Store
 
-*(Coming soon)*
+Chrome Spaces is also available on the [Chrome Web Store](https://chrome.google.com/webstore/detail/your-extension-id). For the easiest installation, simply visit the Chrome Web Store page and click "Add to Chrome."
 
 ## Usage
 
@@ -71,30 +73,46 @@ Access the settings page by clicking "Options" in the popup footer. Here you can
 
 ```
 chrome-spaces-extension/
-├── manifest.json          # Extension manifest
-├── background.js          # Background script for managing windows and tabs
-├── popup/                 # Popup UI
-│   ├── popup.html
-│   ├── popup.css
-│   └── popup.js
-├── options/               # Options page
-│   ├── options.html
-│   ├── options.css
-│   └── options.js
-└── icons/                 # Extension icons
-    ├── icon16.png
-    ├── icon48.png
-    └── icon128.png
+├── manifest.json          # Extension manifest file
+├── webpack.config.js      # Webpack configuration
+├── tsconfig.json          # TypeScript configuration
+├── package.json           # npm package file
+├── .eslintrc.json         # ESLint configuration
+├── .prettierrc            # Prettier configuration
+├── icons/                 # Extension icons
+├── popup/                 # Popup UI - React application
+│   ├── popup.html         # Popup HTML file
+│   └── ...              # React components, styles, scripts, etc.
+├── options/               # Options page - React application
+│   ├── options.html       # Options HTML file
+│   └── ...              # React components, styles, scripts, etc.
+├── src/                   # Source code directory (TypeScript)
+│   ├── background/        # Background scripts and services
+│   ├── popup/             # Popup React application source
+│   ├── options/           # Options React application source
+│   ├── shared/            # Shared code and types
+│   └── ...
+├── tests/                 # Tests directory
+│   ├── unit/              # Unit tests
+│   ├── integration/       # Integration tests
+│   └── e2e/               # End-to-end tests
+└── CONTRIBUTING.md        # Contribution guidelines
 ```
 
 ### Building for Production
 
-For production deployment, simply zip the entire directory.
+To build the extension for production, run:
+
+```bash
+npm run build
+```
+
+This will create a production-ready build in the `dist` directory.
 
 ## Contributing
 
-Contributions are welcome! Feel free to submit pull requests or report issues.
+Contributions are welcome! Please read the [Contributing Guidelines](CONTRIBUTING.md) for details on how to contribute. Feel free to submit pull requests or report issues.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
