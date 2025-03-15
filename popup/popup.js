@@ -143,10 +143,15 @@ function setupEventListeners() {
         SpaceUtils.updateSelectedSpace(state.selectedIndex === -1 ? 0 : state.selectedIndex + 1);
         break;
       case 'Enter':
+        e.preventDefault();
         if (state.enterTargetSpace) {
-          const spaceElement = document.querySelector(`.space-item[data-id="${state.enterTargetSpace.id}"] button`);
+          const spaceElement = document.querySelector(`.space-item[data-id="${state.enterTargetSpace.id}"]`);
           if (spaceElement) {
-            spaceElement.click();
+            // Find and click the switch/restore button
+            const actionButton = spaceElement.querySelector('.switch-btn, .restore-btn');
+            if (actionButton) {
+              actionButton.click();
+            }
           }
         }
         break;
@@ -198,6 +203,70 @@ function cleanupEventListeners() {
 function setupSpaceEventDelegation() {
   elements.activeSpacesList.addEventListener('click', handleSpaceClick);
   elements.moveTabList.addEventListener('click', handleSpaceClick);
+  // Add context menu handler
+  [elements.activeSpacesList, elements.moveTabList].forEach(list => {
+    list.addEventListener('contextmenu', handleContextMenu);
+  });
+}
+
+/**
+ * Handle context menu for spaces
+ */
+function handleContextMenu(event) {
+  event.preventDefault();
+  const spaceItem = event.target.closest('.space-item');
+  if (!spaceItem) return;
+
+  const spaceId = spaceItem.dataset.id;
+  if (!spaceId) return;
+
+  // Create context menu
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.innerHTML = `
+    <button class="context-menu-item">
+      <span class="context-menu-icon">🗑️</span>
+      <span class="context-menu-label">Delete Space</span>
+    </button>
+  `;
+
+  // Position menu
+  const rect = spaceItem.getBoundingClientRect();
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+
+  // Adjust position if near window edges
+  const menuRect = menu.getBoundingClientRect();
+  if (menuRect.right > window.innerWidth) {
+    menu.style.left = `${window.innerWidth - menuRect.width - 5}px`;
+  }
+  if (menuRect.bottom > window.innerHeight) {
+    menu.style.top = `${window.innerHeight - menuRect.height - 5}px`;
+  }
+
+  // Add click handler for delete
+  menu.querySelector('.context-menu-item').addEventListener('click', () => {
+    handleSpaceDelete(spaceId);
+    menu.remove();
+  });
+
+  // Close menu on outside click
+  document.addEventListener('click', function closeMenu(e) {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  });
+
+  // Close menu on Escape
+  document.addEventListener('keydown', function closeMenu(e) {
+    if (e.key === 'Escape') {
+      menu.remove();
+      document.removeEventListener('keydown', closeMenu);
+    }
+  });
+
+  document.body.appendChild(menu);
 }
 
 /**
@@ -208,13 +277,6 @@ function handleSpaceClick(event) {
   if (!spaceItem) return;
 
   const spaceId = spaceItem.dataset.id;
-  
-  // Handle delete button click
-  if (event.target.matches('.delete-btn')) {
-    event.stopPropagation();
-    handleSpaceDelete(spaceId);
-    return;
-  }
   
   // Handle action button click (switch/restore)
   if (event.target.matches('.switch-btn, .restore-btn')) {
@@ -321,7 +383,6 @@ async function createSpaceElement(space) {
     <div class="space-info">${space.urls?.length || 0} tabs</div>
     ${!isCurrentSpace ? `
       <div class="space-actions">
-        <button class="delete-btn" title="Delete Space">×</button>
         <button class="${windowExists ? 'switch-btn' : 'restore-btn'}" data-id="${space.id}">
           ${windowExists ? 'Switch' : 'Restore'}
         </button>
@@ -519,6 +580,35 @@ const NotificationManager = {
         .notification.visible {
           opacity: 1;
           transform: translateX(0);
+        }
+        /* Context Menu Styles */
+        .context-menu {
+          position: fixed;
+          background: var(--background-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          padding: 4px 0;
+          z-index: 1000;
+          min-width: 150px;
+        }
+        .context-menu-item {
+          display: flex;
+          align-items: center;
+          padding: 8px 12px;
+          width: 100%;
+          border: none;
+          background: none;
+          color: var(--text-primary);
+          cursor: pointer;
+          text-align: left;
+          font-size: 14px;
+        }
+        .context-menu-item:hover {
+          background: var(--background-secondary);
+        }
+        .context-menu-icon {
+          margin-right: 8px;
         }
       `;
       document.head.appendChild(styles);

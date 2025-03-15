@@ -7,6 +7,7 @@ yarn.lock
 dist/
 build/
 *.zip
+chrome-spaces/*
 
 # IDE and Editor files
 .idea/
