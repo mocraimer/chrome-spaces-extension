@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useEffect } from 'react';
-import { useSelector, useDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../store';
 
 interface SearchBarProps {
   value: string;
@@ -13,7 +13,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   onKeyDown
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const isLoading = useSelector(state => state.spaces.isLoading);
+  const isLoading = useAppSelector(state => state.spaces.isLoading);
 
   // Auto-focus on mount
   useEffect(() => {

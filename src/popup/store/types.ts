@@ -24,6 +24,7 @@ export interface AsyncActionMeta {
   arg: any;
   requestId: string;
   requestStatus: 'pending' | 'fulfilled' | 'rejected';
+  [key: string]: any;
 }
 
 export interface AsyncAction<T = any> extends BaseAction<T> {
@@ -51,13 +52,14 @@ export interface RestoreSpaceResponse {
 // Thunk types
 export type AppDispatch = {
   <A extends BaseAction | AsyncAction>(action: A): A;
-  <R>(asyncAction: AppThunk<R>): R;
+  <R>(asyncAction: AppThunk<R>): Promise<R>;
+  <R>(asyncAction: AppThunk<Promise<R>>): Promise<R>;
 };
 
 export type AppThunk<R = void> = (
   dispatch: AppDispatch,
   getState: () => RootState
-) => R;
+) => R | Promise<R>;
 
 // Action creator types
 export type ActionCreator<T = void> = T extends void
@@ -119,6 +121,7 @@ export function createAsyncAction<Args = void, Result = void>(
 
 // Type guards
 export function isAsyncAction(action: BaseAction | AsyncAction): action is AsyncAction {
-  return 'meta' in action && 
-    'requestStatus' in (action as AsyncAction).meta;
+  return 'meta' in action &&
+    action.meta !== undefined &&
+    'requestStatus' in action.meta;
 }

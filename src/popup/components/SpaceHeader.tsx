@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { useSelector, useDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../store';
 import { renameSpace } from '../store/slices/spacesSlice';
 import type { AppDispatch } from '../store/types';
 
 export const SpaceHeader: React.FC = () => {
-  const dispatch = useDispatch() as AppDispatch;
-  const currentWindowId = useSelector(state => state.spaces.currentWindowId);
-  const spaces = useSelector(state => state.spaces.spaces);
+  const dispatch = useAppDispatch();
+  const currentWindowId = useAppSelector(state => state.spaces.currentWindowId);
+  const spaces = useAppSelector(state => state.spaces.spaces);
   const currentSpace = currentWindowId ? spaces[currentWindowId] : null;
 
   const [isEditing, setIsEditing] = useState(false);

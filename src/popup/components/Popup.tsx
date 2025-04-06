@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSelector, useDispatch, AppDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../store';
 import { SpaceHeader } from './SpaceHeader';
 import { SearchBar } from './SearchBar';
 import { SpaceList } from './SpaceList';
@@ -13,11 +13,11 @@ import {
 } from '../store/slices/spacesSlice';
 
 export const Popup: React.FC = () => {
-  const dispatch = useDispatch() as AppDispatch;
-  const spaces = useSelector(state => state.spaces.spaces);
-  const closedSpaces = useSelector(state => state.spaces.closedSpaces);
-  const isLoading = useSelector(state => state.spaces.isLoading);
-  const error = useSelector(state => state.spaces.error);
+  const dispatch = useAppDispatch();
+  const spaces = useAppSelector(state => state.spaces.spaces);
+  const closedSpaces = useAppSelector(state => state.spaces.closedSpaces);
+  const isLoading = useAppSelector(state => state.spaces.isLoading);
+  const error = useAppSelector(state => state.spaces.error);
 
   const [searchTerm, setSearchTerm] = useState('');
   

@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { Provider } from 'react-redux';
 import { Popup } from './components/Popup';
 import { ThemeProvider } from './styles/ThemeProvider';
 import { store } from './store';
@@ -42,32 +43,16 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// StoreContext and hook
-const StoreContext = React.createContext(store);
-
-export const useStore = () => {
-  const context = React.useContext(StoreContext);
-  if (!context) {
-    throw new Error('useStore must be used within a StoreProvider');
-  }
-  return context;
-};
-
-// StoreProvider component
-const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <StoreContext.Provider value={store}>
-    {children}
-  </StoreContext.Provider>
-);
+// Removed custom StoreContext, useStore, and StoreProvider
 
 // App component with providers
 const App: React.FC = () => (
   <ErrorBoundary>
-    <StoreProvider>
+    <Provider store={store}>
       <ThemeProvider>
         <Popup />
       </ThemeProvider>
-    </StoreProvider>
+    </Provider>
   </ErrorBoundary>
 );
 

@@ -1,9 +1,9 @@
-import path from 'path';
-import CopyPlugin from 'copy-webpack-plugin';
-import HtmlWebpackPlugin from 'html-webpack-plugin';
-import * as webpack from 'webpack';
+const path = require('path');
+const CopyPlugin = require('copy-webpack-plugin');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 
-const config: webpack.Configuration = {
+const config: import('webpack').Configuration = {
   devtool: process.env.NODE_ENV === 'production' ? false : 'source-map',
   mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
   entry: {
@@ -57,4 +57,4 @@ const config: webpack.Configuration = {
   ],
 };
 
-export default config;
+module.exports = config;

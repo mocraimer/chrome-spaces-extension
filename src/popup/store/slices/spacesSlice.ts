@@ -6,7 +6,8 @@ import {
   AsyncAction,
   createAction,
   createAsyncAction,
-  FetchSpacesResponse
+  FetchSpacesResponse,
+  isAsyncAction
 } from '../types';
 
 // Initial state
@@ -183,7 +184,7 @@ export default function spacesReducer(
     }
 
     case `${RESTORE_SPACE}/fulfilled`: {
-      if (action.payload.success) {
+      if (isAsyncAction(action) && action.payload.success) {
         const { [action.meta.arg]: _, ...remainingClosedSpaces } = state.closedSpaces;
         return {
           ...state,

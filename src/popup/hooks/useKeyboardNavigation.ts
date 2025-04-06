@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSelector, useDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../store';
 import { selectSpace, switchToSpace } from '../store/slices/spacesSlice';
 import type { AppDispatch } from '../store/types';
 
@@ -9,8 +9,8 @@ interface UseKeyboardNavigationOptions {
 }
 
 export function useKeyboardNavigation({ spaces, closedSpaces }: UseKeyboardNavigationOptions) {
-  const dispatch = useDispatch() as AppDispatch;
-  const selectedSpaceId = useSelector(state => state.spaces.selectedSpaceId);
+  const dispatch = useAppDispatch();
+  const selectedSpaceId = useAppSelector(state => state.spaces.selectedSpaceId);
   const [searchFocused, setSearchFocused] = useState(false);
 
   // Get all space IDs in display order

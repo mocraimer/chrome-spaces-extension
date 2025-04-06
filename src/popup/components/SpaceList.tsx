@@ -1,6 +1,6 @@
 import React from 'react';
 import { Space } from '@/shared/types/Space';
-import { useSelector, useDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../store';
 import { selectSpace } from '../store/slices/spacesSlice';
 import { CssClasses } from '@/shared/constants';
 import { useContextMenu } from '../hooks/useContextMenu';
@@ -16,9 +16,9 @@ export const SpaceList: React.FC<SpaceListProps> = ({
   type,
   onSpaceAction
 }) => {
-  const selectedSpaceId = useSelector(state => state.spaces.selectedSpaceId);
-  const currentWindowId = useSelector(state => state.spaces.currentWindowId);
-  const dispatch = useDispatch();
+  const selectedSpaceId = useAppSelector(state => state.spaces.selectedSpaceId);
+  const currentWindowId = useAppSelector(state => state.spaces.currentWindowId);
+  const dispatch = useAppDispatch();
 
   const handleSpaceClick = (spaceId: string) => {
     dispatch(selectSpace(spaceId));
