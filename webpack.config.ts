@@ -4,7 +4,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 
 const config: import('webpack').Configuration = {
-  devtool: process.env.NODE_ENV === 'production' ? false : 'source-map',
+  devtool: 'source-map',
   mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
   entry: {
     popup: path.join(__dirname, '/src/popup/index.tsx'),

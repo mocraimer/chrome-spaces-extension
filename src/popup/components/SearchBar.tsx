@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useEffect } from 'react';
-import { useAppSelector, useAppDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../../shared/hooks/storeHooks';
 
 interface SearchBarProps {
   value: string;

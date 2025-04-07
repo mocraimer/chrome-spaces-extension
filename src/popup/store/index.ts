@@ -1,24 +1,38 @@
 import { configureStore } from '@reduxjs/toolkit';
-import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
 import spacesReducer from './slices/spacesSlice';
+import type { RootState } from '@/shared/types/store';
 
-// Configure the store with the spaces reducer
+// Debug logging
+console.log('Creating Redux store with debug logging...');
+
+// Create and configure store
 export const store = configureStore({
   reducer: {
-    spaces: spacesReducer,
+    spaces: spacesReducer
   },
-  // Middleware is automatically included by configureStore, including thunk middleware
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: {
+        ignoredActions: [
+          'spaces/fetchAll/pending',
+          'spaces/fetchAll/fulfilled',
+          'spaces/fetchAll/rejected'
+        ]
+      }
+    })
 });
 
-// Infer the `RootState` and `AppDispatch` types from the store itself
-export type RootState = ReturnType<typeof store.getState>;
-export type AppDispatch = typeof store.dispatch;
+// Add development debug listener
+if (process.env.NODE_ENV === 'development') {
+  store.subscribe(() => {
+    console.log('[Redux Debug] State updated:', store.getState());
+  });
+}
 
-// Create typed versions of the useDispatch and useSelector hooks
-export const useAppDispatch = () => useDispatch<AppDispatch>();
-export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
+// Log initial state
+console.log('Initial store state:', store.getState());
 
-// Re-export selectors for convenience (optional, but can be helpful)
+// Export selectors
 export const selectSpaces = (state: RootState) => state.spaces.spaces;
 export const selectClosedSpaces = (state: RootState) => state.spaces.closedSpaces;
 export const selectCurrentWindow = (state: RootState) => state.spaces.currentWindowId;

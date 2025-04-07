@@ -101,11 +101,14 @@ export class TabManager implements ITabManager {
   /**
    * Get the active tab in a window
    */
-  async getActiveTab(windowId: number): Promise<chrome.tabs.Tab | undefined> {
+  async getActiveTab(windowId: number): Promise<chrome.tabs.Tab> {
     const [tab] = await executeChromeApi(
       () => chrome.tabs.query({ active: true, windowId }),
       'TAB_ERROR'
     );
+    if (!tab) {
+      throw new Error(`No active tab found in window ${windowId}`);
+    }
     return tab;
   }
 
@@ -165,5 +168,35 @@ export class TabManager implements ITabManager {
       return tab.url;
     }
     return tab.pendingUrl || '';
+  }
+
+  /**
+   * Capture a screenshot of a tab
+   */
+  async captureTab(tabId: number): Promise<string> {
+    return executeChromeApi(
+      async () => {
+        // Ensure tab is fully loaded
+        await this.waitForTabLoad(tabId);
+        
+        // Get tab to get its window ID
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab.windowId) {
+          throw new Error('Tab has no window ID');
+        }
+        
+        // Capture visible area of the tab
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format: 'png'
+        });
+        
+        if (!dataUrl) {
+          throw new Error('Failed to capture tab screenshot');
+        }
+        
+        return dataUrl;
+      },
+      'TAB_ERROR'
+    );
   }
 }

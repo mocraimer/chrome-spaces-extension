@@ -2,7 +2,7 @@ import { MessageHandler as IMessageHandler } from '@/shared/types/Services';
 import { WindowManager } from './WindowManager';
 import { TabManager } from './TabManager';
 import { StateManager } from './StateManager';
-import { ActionTypes, MessageTypes } from '@/shared/constants';
+import { ActionTypes, MessageTypes, CommandTypes } from '@/shared/constants';
 import { createError, typeGuards } from '@/shared/utils';
 
 export class MessageHandler implements IMessageHandler {
@@ -10,7 +10,10 @@ export class MessageHandler implements IMessageHandler {
     private windowManager: WindowManager,
     private tabManager: TabManager,
     private stateManager: StateManager
-  ) {}
+  ) {
+    // Listen for keyboard commands
+    chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
+  }
 
   /**
    * Handle incoming messages from the extension UI
@@ -112,7 +115,7 @@ export class MessageHandler implements IMessageHandler {
           )
         );
       }
-
+      
       // Remove from closed spaces and create new space
       delete closedSpaces[spaceId];
       await this.stateManager.createSpace(window.id!);
@@ -154,6 +157,70 @@ export class MessageHandler implements IMessageHandler {
   }): void {
     chrome.runtime.sendMessage(message).catch(() => {
       // Ignore errors if no listeners
+    });
+  }
+
+  /**
+   * Handle keyboard command events
+   */
+  private async handleCommand(command: string): Promise<void> {
+    switch (command) {
+      case CommandTypes.NEXT_SPACE:
+        await this.navigateSpaces('next');
+        break;
+      case CommandTypes.PREVIOUS_SPACE:
+        await this.navigateSpaces('previous');
+        break;
+      case "_execute_action":
+        await this.handleTogglePopup();
+        break;
+    }
+    this.broadcastMessage({
+      type: MessageTypes.COMMAND_EXECUTED,
+      command
+    });
+  }
+
+  /**
+   * Toggle popup display
+   */
+  private async handleTogglePopup(): Promise<void> {
+    // Trigger popup toggle by broadcasting a toggle message to extension pages
+    this.broadcastMessage({
+      type: "POPUP_TOGGLE"
+    });
+  }
+
+  /**
+   * Navigate between spaces
+   */
+  private async navigateSpaces(direction: 'next' | 'previous'): Promise<void> {
+    const spaces = Object.values(this.stateManager.getAllSpaces());
+    if (spaces.length <= 1) return;
+
+    // Get current window ID
+    const currentWindow = await this.windowManager.getCurrentWindow();
+    const windowId = currentWindow?.id;
+    if (windowId === undefined) return;
+
+    // Find current space index
+    const currentSpaceId = windowId.toString();
+    const currentIndex = spaces.findIndex(space => space.id === currentSpaceId);
+    if (currentIndex === -1) return;
+
+    // Calculate next space index
+    const nextIndex = direction === 'next'
+      ? (currentIndex + 1) % spaces.length
+      : (currentIndex - 1 + spaces.length) % spaces.length;
+
+    // Switch to the target space
+    const targetSpace = spaces[nextIndex];
+    await this.windowManager.switchToWindow(parseInt(targetSpace.id));
+    
+    // Update UI state
+    this.broadcastMessage({
+      type: MessageTypes.SPACES_UPDATED,
+      spaces: this.stateManager.getAllSpaces()
     });
   }
 }

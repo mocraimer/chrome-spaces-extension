@@ -11,6 +11,7 @@ interface HotkeyOptions {
   ignoreInput?: boolean; // Whether to ignore hotkeys when typing in input elements
   preventDefault?: boolean; // Whether to prevent default browser behavior
   onError?: (error: Error) => void; // Error handler
+  onPopupToggle?: () => void; // Handler for popup toggle hotkey
 }
 
 // Parse key combo string into parts
@@ -46,7 +47,8 @@ export function useHotkeys(
   const {
     ignoreInput = true,
     preventDefault = true,
-    onError
+    onError,
+    onPopupToggle
   } = options;
 
   // Store hotkeys in a ref to avoid unnecessary effect triggers
@@ -66,6 +68,16 @@ export function useHotkeys(
       }
 
       const keyString = eventToKeyString(event);
+
+      // Handle popup toggle hotkey if defined
+      if ((keyString === 'ctrl+shift+space' || keyString === 'meta+shift+space') && onPopupToggle) {
+        if (preventDefault) {
+          event.preventDefault();
+        }
+        onPopupToggle();
+        return;
+      }
+
       const handler = hotkeysRef.current[keyString];
 
       if (handler) {
@@ -81,7 +93,7 @@ export function useHotkeys(
         console.error('Hotkey error:', error);
       }
     }
-  }, [ignoreInput, preventDefault, onError]);
+  }, [ignoreInput, preventDefault, onError, onPopupToggle]);
 
   // Set up event listener
   useEffect(() => {
@@ -129,6 +141,10 @@ const MyComponent: React.FC = () => {
     preventDefault: true,
     onError: (error) => {
       console.error('Hotkey error:', error);
+    },
+    onPopupToggle: () => {
+      console.log('Popup toggle triggered');
+      // Toggle popup display...
     }
   });
 

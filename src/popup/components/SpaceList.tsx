@@ -1,6 +1,6 @@
 import React from 'react';
 import { Space } from '@/shared/types/Space';
-import { useAppSelector, useAppDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../../shared/hooks/storeHooks';
 import { selectSpace } from '../store/slices/spacesSlice';
 import { CssClasses } from '@/shared/constants';
 import { useContextMenu } from '../hooks/useContextMenu';

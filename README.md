@@ -35,21 +35,56 @@ Chrome Spaces is also available on the [Chrome Web Store](https://chrome.google.
 
 ### Creating and Managing Spaces
 
-- Each Chrome window automatically becomes a space
-- Click the Chrome Spaces icon in the toolbar to open the popup interface
-- Rename your current space using the input field at the top
-- Switch between spaces by clicking on them in the "Active Spaces" list
-- Restore closed spaces from the "Closed Spaces" list
+Each Chrome window automatically becomes a space, allowing you to organize your work into distinct contexts. Here's how to manage your spaces:
 
-### Keyboard Shortcuts
+#### Space Names
 
-- **Ctrl+Shift+Space** (or **Cmd+Shift+Space** on Mac): Open the Spaces popup
-- **Ctrl+Shift+Right** (or **Cmd+Shift+Right** on Mac): Switch to next space
-- **Ctrl+Shift+Left** (or **Cmd+Shift+Left** on Mac): Switch to previous space
-- **Up/Down Arrow**: Navigate through spaces in the popup
-- **Enter**: Switch to currently selected space
+- **Automatic Naming**: New spaces are automatically assigned a default name based on their creation order
+- **Manual Naming**: Click the name of any space to edit it
+- **Persistence**: Space names are automatically saved and persist across browser sessions
+- **Real-time Updates**: Names update instantly across all open windows
+- **Unique Names**: You can have multiple spaces with the same name, useful for similar work contexts
 
-> **Note:** You can customize these shortcuts by going to `chrome://extensions/shortcuts`.
+### Keyboard Navigation
+
+The extension provides comprehensive keyboard shortcuts for quick access and navigation:
+
+#### Global Shortcuts
+
+- **Ctrl+Shift+Space** (Windows/Linux) or **Cmd+Shift+Space** (Mac): Open the Spaces popup
+- **Ctrl+[1-9]**: Switch to space 1-9 directly
+- **/** (forward slash): Focus the search bar
+- **Ctrl+N**: Create a new space
+- **Ctrl+W**: Close current space
+- **?**: Show keyboard shortcuts help
+
+#### Popup Navigation
+
+- **↑/↓**: Navigate through spaces in the list
+- **Enter**: Switch to the selected space
+- **Esc**: Close the popup
+- **Tab/Shift+Tab**: Navigate through interactive elements
+
+> **Note:** Global shortcuts can be customized in Chrome's extension shortcuts settings (`chrome://extensions/shortcuts`)
+
+### Search Functionality
+
+The search feature helps you quickly find and switch between spaces:
+
+#### Search Features
+
+- **Real-time Search**: Results update as you type
+- **Fuzzy Matching**: Finds spaces even with partial or inexact matches
+- **Keyboard Navigation**: Use arrow keys to navigate search results
+- **Search Scope**: Searches both active and closed spaces
+- **Clear Search**: Click the 'x' button or press Esc to clear the search
+
+#### Search Tips
+
+1. Start typing to instantly filter spaces
+2. Use arrow keys to highlight results
+3. Press Enter to switch to the highlighted space
+4. Search matches space names and URLs of contained tabs
 
 ### Moving Tabs Between Spaces
 
@@ -75,28 +110,28 @@ Access the settings page by clicking "Options" in the popup footer. Here you can
 chrome-spaces-extension/
 ├── manifest.json          # Extension manifest file
 ├── webpack.config.js      # Webpack configuration
-├── tsconfig.json          # TypeScript configuration
-├── package.json           # npm package file
-├── .eslintrc.json         # ESLint configuration
-├── .prettierrc            # Prettier configuration
-├── icons/                 # Extension icons
-├── popup/                 # Popup UI - React application
-│   ├── popup.html         # Popup HTML file
+├── tsconfig.json         # TypeScript configuration
+├── package.json          # npm package file
+├── .eslintrc.json        # ESLint configuration
+├── .prettierrc           # Prettier configuration
+├── icons/                # Extension icons
+├── popup/                # Popup UI - React application
+│   ├── popup.html        # Popup HTML file
 │   └── ...              # React components, styles, scripts, etc.
-├── options/               # Options page - React application
-│   ├── options.html       # Options HTML file
+├── options/              # Options page - React application
+│   ├── options.html      # Options HTML file
 │   └── ...              # React components, styles, scripts, etc.
-├── src/                   # Source code directory (TypeScript)
-│   ├── background/        # Background scripts and services
-│   ├── popup/             # Popup React application source
-│   ├── options/           # Options React application source
-│   ├── shared/            # Shared code and types
+├── src/                  # Source code directory (TypeScript)
+│   ├── background/       # Background scripts and services
+│   ├── popup/            # Popup React application source
+│   ├── options/          # Options React application source
+│   ├── shared/           # Shared code and types
 │   └── ...
-├── tests/                 # Tests directory
-│   ├── unit/              # Unit tests
-│   ├── integration/       # Integration tests
-│   └── e2e/               # End-to-end tests
-└── CONTRIBUTING.md        # Contribution guidelines
+├── tests/                # Tests directory
+│   ├── unit/             # Unit tests
+│   ├── integration/      # Integration tests
+│   └── e2e/             # End-to-end tests
+└── CONTRIBUTING.md       # Contribution guidelines
 ```
 
 ### Building for Production

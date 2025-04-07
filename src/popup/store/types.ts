@@ -1,3 +1,4 @@
+import { Dispatch } from '@reduxjs/toolkit';
 import { Space } from '@/shared/types/Space';
 
 export interface RootState {
@@ -11,6 +12,7 @@ export interface SpacesState {
   isLoading: boolean;
   error: string | null;
   selectedSpaceId: string | null;
+  searchQuery: string;
 }
 
 // Action types

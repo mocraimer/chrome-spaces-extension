@@ -1,189 +1,135 @@
-import { StateManager as IStateManager } from '@/shared/types/Services';
-import { Space } from '@/shared/types/Space';
 import { WindowManager } from './WindowManager';
 import { TabManager } from './TabManager';
 import { StorageManager } from './StorageManager';
-import { DEFAULT_SPACE_NAME, SYNC_INTERVAL } from '@/shared/constants';
-import { createError } from '@/shared/utils';
+import {
+  DEFAULT_SPACE_NAME,
+  SPACE_NAME_MAX_LENGTH,
+  SPACE_NAME_MIN_LENGTH
+} from '@/shared/constants';
+import { StateManager as IStateManager } from '@/shared/types/Services';
+import type { Space } from '@/shared/types/Space';
 
 export class StateManager implements IStateManager {
   private spaces: Record<string, Space> = {};
   private closedSpaces: Record<string, Space> = {};
-  private initialized = false;
-  private syncInterval?: number;
-
+  
   constructor(
     private windowManager: WindowManager,
     private tabManager: TabManager,
     private storageManager: StorageManager
   ) {}
 
-  /**
-   * Initialize the state manager
-   */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
-
-    try {
-      // Load saved spaces
-      this.spaces = await this.storageManager.loadSpaces();
-      this.closedSpaces = await this.storageManager.loadClosedSpaces();
-
-      // Initial synchronization
-      await this.synchronizeWindowsAndSpaces();
-
-      // Set up periodic sync
-      if (typeof window !== 'undefined') {
-        this.syncInterval = window.setInterval(
-          () => this.synchronizeWindowsAndSpaces(),
-          SYNC_INTERVAL
-        );
-      }
-
-      this.initialized = true;
-    } catch (error) {
-      throw createError(
-        'Failed to initialize state manager',
-        'INITIALIZATION_FAILED',
-        error instanceof Error ? error : undefined
-      );
-    }
+    this.spaces = await this.storageManager.loadSpaces();
+    this.closedSpaces = await this.storageManager.loadClosedSpaces();
   }
 
-  /**
-   * Get all active spaces
-   */
   getAllSpaces(): Record<string, Space> {
-    return { ...this.spaces };
+    return this.spaces;
   }
 
-  /**
-   * Get all closed spaces
-   */
   getClosedSpaces(): Record<string, Space> {
-    return { ...this.closedSpaces };
+    return this.closedSpaces;
   }
 
-  /**
-   * Check if a window has an associated space
-   */
   hasSpace(windowId: number): boolean {
-    return windowId.toString() in this.spaces;
+    return Object.values(this.spaces).some(space => space.id === windowId.toString());
   }
 
-  /**
-   * Create a new space for a window
-   */
+  async handleShutdown(): Promise<void> {
+    await this.storageManager.saveSpaces(this.spaces);
+    await this.storageManager.saveClosedSpaces(this.closedSpaces);
+  }
+
+  async synchronizeWindowsAndSpaces(): Promise<void> {
+    // To be implemented
+  }
+
   async createSpace(windowId: number): Promise<void> {
-    const window = await this.windowManager.getWindow(windowId);
     const tabs = await this.tabManager.getTabs(windowId);
-    
-    const space: Space = {
+    const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
+
+    const newSpace: Space = {
       id: windowId.toString(),
-      name: DEFAULT_SPACE_NAME,
-      urls: tabs.map(tab => this.tabManager.getTabUrl(tab)).filter(Boolean),
+      name: `${DEFAULT_SPACE_NAME} ${windowId}`,
+      urls,
       lastModified: Date.now()
     };
 
-    this.spaces[windowId.toString()] = space;
+    this.spaces[windowId.toString()] = newSpace;
     await this.storageManager.saveSpaces(this.spaces);
   }
 
-  /**
-   * Close a space
-   */
   async closeSpace(windowId: number): Promise<void> {
-    const windowIdStr = windowId.toString();
-    const space = this.spaces[windowIdStr];
-    
+    const spaceId = windowId.toString();
+    const space = this.spaces[spaceId];
     if (!space) return;
 
     // Move to closed spaces
-    this.closedSpaces[windowIdStr] = {
-      ...space,
-      lastModified: Date.now()
-    };
+    this.closedSpaces[spaceId] = space;
+    delete this.spaces[spaceId];
 
-    // Remove from active spaces
-    delete this.spaces[windowIdStr];
-
-    // Save both states
+    // Update storage
     await Promise.all([
       this.storageManager.saveSpaces(this.spaces),
       this.storageManager.saveClosedSpaces(this.closedSpaces)
     ]);
   }
 
-  /**
-   * Rename a space
-   */
   async renameSpace(windowId: number, name: string): Promise<void> {
-    const windowIdStr = windowId.toString();
-    const space = this.spaces[windowIdStr];
-    
-    if (!space) return;
+    await this.setSpaceName(windowId.toString(), name);
+  }
 
-    space.name = name;
-    space.lastModified = Date.now();
+  async setSpaceName(spaceId: string, name: string): Promise<void> {
+    const cleanName = name.trim().replace(/\s+/g, ' ');
+
+    // Validate name length
+    if (cleanName.length < SPACE_NAME_MIN_LENGTH) {
+      throw new Error('Space name cannot be empty');
+    }
+    if (cleanName.length > SPACE_NAME_MAX_LENGTH) {
+      throw new Error(`Space name cannot exceed ${SPACE_NAME_MAX_LENGTH} characters`);
+    }
+
+    // Load and ensure latest state
+    const spaces = await this.storageManager.loadSpaces();
+    this.spaces = spaces;
     
+    if (!this.spaces[spaceId]) {
+      throw new Error('Space not found');
+    }
+
+    // Update both in-memory and storage state atomically
+    const updatedSpace = {
+      ...this.spaces[spaceId],
+      name: cleanName,
+      lastModified: Date.now()
+    };
+    
+    this.spaces[spaceId] = updatedSpace;
     await this.storageManager.saveSpaces(this.spaces);
   }
 
-  /**
-   * Handle extension shutdown
-   */
-  async handleShutdown(): Promise<void> {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
+  async getSpaceName(spaceId: string): Promise<string> {
+    // Load latest state
+    this.spaces = await this.storageManager.loadSpaces();
+    this.closedSpaces = await this.storageManager.loadClosedSpaces();
+
+    // Find space in either active or closed spaces
+    const space = this.spaces[spaceId] || this.closedSpaces[spaceId];
+    if (space) {
+      return space.name;
     }
 
-    // Final sync before shutdown
-    await this.synchronizeWindowsAndSpaces();
+    // Return default name using constant
+    return `${DEFAULT_SPACE_NAME} ${spaceId}`;
   }
 
-  /**
-   * Synchronize windows and spaces
-   */
-  async synchronizeWindowsAndSpaces(): Promise<void> {
-    try {
-      const windows = await this.windowManager.getAllWindows();
-      const windowIds = new Set(windows.map(w => w.id!.toString()));
+  private async getSpaceById(spaceId: string): Promise<Space | null> {
+    // Load latest state
+    this.spaces = await this.storageManager.loadSpaces();
+    this.closedSpaces = await this.storageManager.loadClosedSpaces();
 
-      // Remove spaces for closed windows
-      for (const windowId of Object.keys(this.spaces)) {
-        if (!windowIds.has(windowId)) {
-          await this.closeSpace(Number(windowId));
-        }
-      }
-
-      // Create spaces for new windows
-      for (const window of windows) {
-        if (!this.hasSpace(window.id!)) {
-          await this.createSpace(window.id!);
-        }
-      }
-
-      // Update tabs for all spaces
-      await Promise.all(
-        windows.map(async window => {
-          const tabs = await this.tabManager.getTabs(window.id!);
-          const space = this.spaces[window.id!.toString()];
-          
-          if (space) {
-            space.urls = tabs.map(tab => this.tabManager.getTabUrl(tab)).filter(Boolean);
-            space.lastModified = Date.now();
-          }
-        })
-      );
-
-      await this.storageManager.saveSpaces(this.spaces);
-    } catch (error) {
-      console.error('Sync error:', error);
-      throw createError(
-        'Failed to synchronize windows and spaces',
-        'SYNC_ERROR',
-        error instanceof Error ? error : undefined
-      );
-    }
+    return this.spaces[spaceId] || this.closedSpaces[spaceId] || null;
   }
 }

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAppSelector, useAppDispatch } from '../store';
+import { useAppSelector, useAppDispatch } from '../../shared/hooks/storeHooks';
 import { SpaceHeader } from './SpaceHeader';
 import { SearchBar } from './SearchBar';
 import { SpaceList } from './SpaceList';
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
+import { searchSpaces } from '../utils/search';
 import {
   fetchSpaces,
   setCurrentWindow,
@@ -39,16 +41,13 @@ export const Popup: React.FC = () => {
     initializePopup();
   }, [dispatch]);
 
-  // Filter spaces based on search term
-  const filteredSpaces = useCallback((spaces: Record<string, any>) => {
+  // Get filtered spaces using search utility
+  const getFilteredSpaces = useCallback((spaces: Record<string, any>) => {
     if (!searchTerm) return spaces;
-    
-    const searchLower = searchTerm.toLowerCase();
-    return Object.entries(spaces).reduce((filtered, [id, space]) => {
-      if (space.name.toLowerCase().includes(searchLower)) {
-        filtered[id] = space;
-      }
-      return filtered;
+    const filteredArray = searchSpaces(Object.values(spaces), searchTerm);
+    return filteredArray.reduce((acc, space) => {
+      acc[space.id] = space;
+      return acc;
     }, {} as Record<string, any>);
   }, [searchTerm]);
 
@@ -82,10 +81,34 @@ export const Popup: React.FC = () => {
     }
   }, [dispatch, spaces]);
 
-  // Handle keyboard navigation
+  // Initialize keyboard navigation
+  const { searchFocused } = useKeyboardNavigation({
+    spaces,
+    closedSpaces,
+    searchQuery: searchTerm
+  });
+
+  // Handle keyboard events in search bar
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Implementation will be added when we add keyboard navigation
-  }, []);
+    if (searchFocused) return; // Let the hook handle navigation when not focused on search
+    
+    // Handle search-specific keyboard events
+    switch (e.key) {
+      case 'Escape':
+        setSearchTerm('');
+        e.currentTarget.blur();
+        break;
+      case 'Enter':
+        if (searchTerm) {
+          const filteredActiveSpaces = getFilteredSpaces(spaces);
+          const firstMatch = Object.keys(filteredActiveSpaces)[0];
+          if (firstMatch) {
+            handleSpaceAction(firstMatch, 'switch');
+          }
+        }
+        break;
+    }
+  }, [searchTerm, spaces, searchFocused, handleSpaceAction]);
 
   if (error) {
     return (
@@ -110,7 +133,7 @@ export const Popup: React.FC = () => {
         <section className="active-spaces">
           <h3>Active Spaces</h3>
           <SpaceList
-            spaces={filteredSpaces(spaces)}
+            spaces={getFilteredSpaces(spaces)}
             type="active"
             onSpaceAction={handleSpaceAction}
           />
@@ -120,7 +143,7 @@ export const Popup: React.FC = () => {
           <section className="closed-spaces">
             <h3>Closed Spaces</h3>
             <SpaceList
-              spaces={filteredSpaces(closedSpaces)}
+              spaces={getFilteredSpaces(closedSpaces)}
               type="closed"
               onSpaceAction={handleSpaceAction}
             />

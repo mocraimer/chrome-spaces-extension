@@ -17,7 +17,8 @@ const initialState: SpacesState = {
   currentWindowId: null,
   isLoading: false,
   error: null,
-  selectedSpaceId: null
+  selectedSpaceId: null,
+  searchQuery: ''
 };
 
 // Action Types
@@ -30,6 +31,8 @@ export const REMOVE_CLOSED_SPACE = 'spaces/removeClosed';
 export const SET_CURRENT_WINDOW = 'spaces/setCurrentWindow';
 export const SELECT_SPACE = 'spaces/selectSpace';
 export const CLEAR_ERROR = 'spaces/clearError';
+export const SET_SEARCH = 'spaces/setSearch';
+export const setSearch = createAction<string>(SET_SEARCH);
 
 // Sync Action Creators
 export const setCurrentWindow = createAction<string>(SET_CURRENT_WINDOW);
@@ -124,7 +127,12 @@ export default function spacesReducer(
         ...state,
         error: null
       };
-
+    case SET_SEARCH:
+      return {
+        ...state,
+        searchQuery: action.payload
+      };
+       
     case `${FETCH_SPACES}/pending`:
       return {
         ...state,

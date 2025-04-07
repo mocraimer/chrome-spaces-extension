@@ -2,8 +2,10 @@
 export const STORAGE_KEY = 'chrome_spaces';
 export const SETTINGS_KEY = 'chrome_spaces_settings';
 
-// Default Values
+// Default Values and Validation
 export const DEFAULT_SPACE_NAME = 'Untitled Space';
+export const SPACE_NAME_MAX_LENGTH = 50;
+export const SPACE_NAME_MIN_LENGTH = 1;
 export const DEFAULT_SETTINGS = {
   autoSaveInterval: 60000, // 1 minute
   maxClosedSpaces: 10,
@@ -24,7 +26,15 @@ export const MessageTypes = {
   SPACES_UPDATED: 'spaces-updated',
   STATE_CHANGED: 'state-changed',
   ERROR_OCCURRED: 'error-occurred',
-  SETTINGS_CHANGED: 'settings-changed'
+  SETTINGS_CHANGED: 'settings-changed',
+  COMMAND_EXECUTED: 'command-executed'
+} as const;
+
+// Command Types
+export const CommandTypes = {
+  NEXT_SPACE: 'next-space',
+  PREVIOUS_SPACE: 'previous-space',
+  TOGGLE_POPUP: '_execute_action'
 } as const;
 
 // Action Types

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { Popup } from './components/Popup';
 import { ThemeProvider } from './styles/ThemeProvider';
-import { store } from './store';
+import { store } from './store/index';
 
 // Error Boundary component
 class ErrorBoundary extends React.Component<
@@ -56,14 +56,51 @@ const App: React.FC = () => (
   </ErrorBoundary>
 );
 
+// Development logging
+console.log('Initializing popup...');
+console.log('Store state:', store.getState());
+
 // Initialize app
 const container = document.getElementById('root');
 if (!container) {
+  console.error('Failed to find root element');
   throw new Error('Root element not found');
 }
 
-const root = createRoot(container);
-root.render(<App />);
+// Debug logging for React initialization
+try {
+  console.log('Creating React root...');
+  const root = createRoot(container);
+  console.log('Rendering app...');
+  root.render(
+    <React.StrictMode>
+      <React.Suspense fallback={<div>Loading...</div>}>
+        <ErrorBoundary>
+          <div id="redux-error-container">
+            {/* Debug info */}
+            <script dangerouslySetInnerHTML={{
+              __html: `
+                window.addEventListener('error', function(event) {
+                  console.error('Global error caught:', event.error);
+                  document.getElementById('redux-error-container').textContent =
+                    'Redux Error: ' + event.error.message;
+                });
+                window.addEventListener('unhandledrejection', function(event) {
+                  console.error('Unhandled promise rejection:', event.reason);
+                });
+              `
+            }} />
+            <App />
+          </div>
+        </ErrorBoundary>
+      </React.Suspense>
+    </React.StrictMode>
+  );
+  console.log('App rendered successfully');
+} catch (error) {
+  console.error('Failed to initialize app:', error);
+  throw error;
+}
 
 // Error boundary styles
 const styles = `
