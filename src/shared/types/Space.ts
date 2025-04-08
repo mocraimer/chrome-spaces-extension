@@ -3,6 +3,7 @@ export interface Space {
   name: string;
   urls: string[];
   lastModified: number;
+  named: boolean;
 }
 
 export interface SpaceState {

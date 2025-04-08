@@ -38,9 +38,9 @@ describe('MessageHandler', () => {
 
   describe('keyboard commands', () => {
     const mockSpaces = {
-      '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now() },
-      '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now() },
-      '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now() }
+      '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now(), named: false },
+      '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now(), named: false },
+      '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now(), named: false }
     };
 
     beforeEach(() => {

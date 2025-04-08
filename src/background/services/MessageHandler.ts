@@ -75,10 +75,12 @@ export class MessageHandler implements IMessageHandler {
         return this.handleRestoreSpace(request.spaceId);
 
       case ActionTypes.REMOVE_CLOSED_SPACE:
-        const closedSpaces = this.stateManager.getClosedSpaces();
-        delete closedSpaces[request.spaceId];
-        await this.stateManager.synchronizeWindowsAndSpaces();
-        return true;
+        await this.stateManager.deleteClosedSpace(request.spaceId);
+        return {
+          success: true,
+          spaces: this.stateManager.getAllSpaces(),
+          closedSpaces: this.stateManager.getClosedSpaces()
+        };
 
       case ActionTypes.MOVE_TAB:
         return this.handleMoveTab(request.tabId, request.targetSpaceId);
@@ -96,14 +98,13 @@ export class MessageHandler implements IMessageHandler {
     windowId?: number;
     error?: string;
   }> {
-    const closedSpaces = this.stateManager.getClosedSpaces();
-    const space = closedSpaces[spaceId];
-
-    if (!space?.urls.length) {
-      return { success: false, error: 'Invalid space or no URLs' };
-    }
-
     try {
+      // Get space info before restoration
+      const space = await this.stateManager.getSpaceById(spaceId);
+      if (!space?.urls.length) {
+        return { success: false, error: 'Invalid space or no URLs' };
+      }
+
       // Create new window with first URL
       const window = await this.windowManager.createWindow([space.urls[0]]);
 
@@ -115,13 +116,13 @@ export class MessageHandler implements IMessageHandler {
           )
         );
       }
-      
-      // Remove from closed spaces and create new space
-      delete closedSpaces[spaceId];
+
+      // Create and name the new space first
       await this.stateManager.createSpace(window.id!);
-      
-      // Set the name of the new space
       await this.stateManager.renameSpace(window.id!, space.name);
+      
+      // Now restore the space state (moves from closed to active)
+      await this.stateManager.restoreSpace(spaceId);
 
       return { success: true, windowId: window.id };
     } catch (error) {

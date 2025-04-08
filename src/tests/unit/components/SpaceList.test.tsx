@@ -15,13 +15,15 @@ describe('SpaceList', () => {
       id: 'space-1',
       name: 'Test Space 1',
       urls: ['https://test1.com'],
-      lastModified: Date.now()
+      lastModified: Date.now(),
+      named: false
     },
     'space-2': {
       id: 'space-2',
       name: 'Test Space 2',
       urls: ['https://test2.com', 'https://test3.com'],
-      lastModified: Date.now()
+      lastModified: Date.now(),
+      named: false
     }
   };
 

@@ -1,12 +1,14 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { Provider } from 'react-redux';
 import { ThemeProvider } from '../popup/styles/ThemeProvider';
+import OptionsLayout from './components/layout/OptionsLayout';
+import { store } from './store';
 
 const Options: React.FC = () => {
   return (
-    <div className="options-container">
-      <h1>Chrome Spaces Settings</h1>
-      <p>Options page coming soon in next update.</p>
+    <div className="options-content">
+      <p>Configuration options will be available here.</p>
     </div>
   );
 };
@@ -51,9 +53,13 @@ class ErrorBoundary extends React.Component<
 
 const App: React.FC = () => (
   <ErrorBoundary>
-    <ThemeProvider>
-      <Options />
-    </ThemeProvider>
+    <Provider store={store}>
+      <ThemeProvider>
+        <OptionsLayout>
+          <Options />
+        </OptionsLayout>
+      </ThemeProvider>
+    </Provider>
   </ErrorBoundary>
 );
 
@@ -67,10 +73,11 @@ root.render(<App />);
 
 // Basic styles
 const styles = `
-  .options-container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem;
+  .options-content {
+    padding: var(--spacing-lg);
+    background-color: var(--background-secondary);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
   }
 
   .error-boundary {
@@ -100,6 +107,9 @@ const styles = `
     padding: var(--spacing-sm) var(--spacing-md);
     border-radius: var(--border-radius-sm);
     font-weight: var(--font-weight-medium);
+    border: none;
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
   }
 
   .retry-button:hover {

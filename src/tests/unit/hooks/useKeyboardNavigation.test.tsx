@@ -5,13 +5,13 @@ import { createMockKeyboardEvent } from '../../utils/testUtils';
 
 describe('useKeyboardNavigation Hook', () => {
   const mockSpaces = {
-    '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now() },
-    '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now() },
-    '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now() }
+    '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now(), named: false },
+    '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now(), named: false },
+    '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now(), named: false }
   };
 
   const mockClosedSpaces = {
-    '4': { id: '4', name: 'Closed Space 1', urls: [], lastModified: Date.now() }
+    '4': { id: '4', name: 'Closed Space 1', urls: [], lastModified: Date.now(), named: false }
   };
 
   let mockState: any;

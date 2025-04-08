@@ -11,7 +11,8 @@
     "tabs",
     "windows",
     "storage",
-    "commands"
+    "commands",
+    "downloads"
   ],
   "background": {
     "service_worker": "background.js"
@@ -30,6 +31,9 @@
     "128": "icons/icon128.png"
   },
   "options_page": "options.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  },
   "commands": {
     "_execute_action": {
       "suggested_key": {

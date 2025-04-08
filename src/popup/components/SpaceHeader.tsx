@@ -48,7 +48,6 @@ export const SpaceHeader: React.FC = () => {
       setIsEditing(false);
     } catch (error) {
       console.error('Failed to rename space:', error);
-      // Reset to original name on error
       if (currentSpace) {
         setEditedName(currentSpace.name);
       }
@@ -81,28 +80,32 @@ export const SpaceHeader: React.FC = () => {
     <div className="space-header">
       <div className="space-title">
         {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            className="space-name-input"
-            value={editedName}
-            onChange={handleNameChange}
-            onKeyDown={handleKeyDown}
-            onBlur={handleBlur}
-            maxLength={50}
-            aria-label="Space name"
-          />
+          <div className="space-name-edit">
+            <input
+              ref={inputRef}
+              type="text"
+              className="space-name-input"
+              value={editedName}
+              onChange={handleNameChange}
+              onKeyDown={handleKeyDown}
+              onBlur={handleBlur}
+              maxLength={50}
+              aria-label="Space name"
+            />
+          </div>
         ) : (
-          <h2 
-            className="space-name" 
-            onClick={handleStartEditing}
-            title="Click to rename"
-          >
-            {currentSpace.name}
-          </h2>
-          
+          <div className="space-name-wrapper">
+            <h2 className="space-name">{currentSpace.name}</h2>
+            <button 
+              className="edit-button"
+              onClick={handleStartEditing}
+              title="Click to rename"
+              aria-label="Edit space name"
+            >
+              ✎
+            </button>
+          </div>
         )}
-        {isEditing ? '✓' : '✎'}
       </div>
       <div className="space-stats">
         {currentSpace.urls.length} {currentSpace.urls.length === 1 ? 'tab' : 'tabs'}
@@ -113,7 +116,6 @@ export const SpaceHeader: React.FC = () => {
 
 // Styles
 const styles = `
-/* Updated styles using theme variables for modern spacing, typography, and borders */
 .space-header {
   padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--border-color);
@@ -126,31 +128,59 @@ const styles = `
   margin-bottom: var(--spacing-xs);
 }
 
-.space-name {
-  margin: 0;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: color var(--transition-fast);
+.space-name-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 
-.space-name:hover {
-  color: var(--primary-color);
+.space-name {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.space-name-edit {
+  flex: 1;
 }
 
 .space-name-input {
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
   border: 1px solid var(--primary-color);
   border-radius: var(--border-radius-sm);
+  background: var(--background-primary);
+  color: var(--text-primary);
   outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.space-name-input:focus {
+  border-color: var(--primary-color-dark);
+}
+
+.edit-button {
+  padding: var(--spacing-xs);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-md);
+}
+
+.edit-button:hover {
+  color: var(--primary-color);
 }
 
 .space-stats {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 `;

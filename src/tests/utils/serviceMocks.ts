@@ -54,6 +54,7 @@ export function createMockSpace(id: string, name: string): Space {
     id,
     name,
     urls: [],
-    lastModified: Date.now()
+    lastModified: Date.now(),
+    named: false
   };
 }

@@ -62,13 +62,6 @@ export const SpaceList: React.FC<SpaceListProps> = ({
     <>
       <div className="space-list-header">
         <h2>{type === 'active' ? 'Active Spaces' : 'Closed Spaces'}</h2>
-        <button
-          onClick={() => dispatch(toggleEditMode())}
-          className="edit-mode-toggle"
-          aria-label={editMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
-        >
-          {editMode ? '✓' : '✎'}
-        </button>
       </div>
       <ul className="space-list">
         {Object.entries(spaces).map(([id, space]) => {
@@ -87,10 +80,10 @@ export const SpaceList: React.FC<SpaceListProps> = ({
             >
               <SpaceItem
                 space={space}
-                isEditing={editMode}
                 onSwitchClick={(e) => handleActionClick(e, id, type === 'active' ? 'switch' : 'restore')}
                 showActions={!isCurrent}
                 actionLabel={type === 'active' ? 'Switch' : 'Restore'}
+                isEditing={editMode && isSelected}
               />
             </li>
           );

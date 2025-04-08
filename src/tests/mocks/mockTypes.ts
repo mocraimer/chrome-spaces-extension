@@ -4,7 +4,8 @@ export const createMockSpace = (id: string, name: string): Space => ({
   id,
   name,
   urls: [],
-  lastModified: Date.now()
+  lastModified: Date.now(),
+  named: false
 });
 
 export const mockSpaces: Record<string, Space> = {
