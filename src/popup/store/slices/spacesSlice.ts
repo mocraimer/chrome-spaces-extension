@@ -18,7 +18,8 @@ const initialState: SpacesState = {
   isLoading: false,
   error: null,
   selectedSpaceId: null,
-  searchQuery: ''
+  searchQuery: '',
+  editMode: false
 };
 
 // Action Types
@@ -32,7 +33,12 @@ export const SET_CURRENT_WINDOW = 'spaces/setCurrentWindow';
 export const SELECT_SPACE = 'spaces/selectSpace';
 export const CLEAR_ERROR = 'spaces/clearError';
 export const SET_SEARCH = 'spaces/setSearch';
+export const TOGGLE_EDIT_MODE = 'spaces/toggleEditMode';
+export const UPDATE_SPACE_NAME = 'spaces/updateSpaceName';
+
 export const setSearch = createAction<string>(SET_SEARCH);
+export const toggleEditMode = createAction(TOGGLE_EDIT_MODE);
+export const updateSpaceName = createAction<{ id: string; name: string }>(UPDATE_SPACE_NAME);
 
 // Sync Action Creators
 export const setCurrentWindow = createAction<string>(SET_CURRENT_WINDOW);
@@ -127,12 +133,37 @@ export default function spacesReducer(
         ...state,
         error: null
       };
+
     case SET_SEARCH:
       return {
         ...state,
         searchQuery: action.payload
       };
-       
+
+    case TOGGLE_EDIT_MODE:
+      return {
+        ...state,
+        editMode: !state.editMode
+      };
+
+    case UPDATE_SPACE_NAME: {
+      const { id, name } = action.payload;
+      if (state.spaces[id]) {
+        return {
+          ...state,
+          spaces: {
+            ...state.spaces,
+            [id]: {
+              ...state.spaces[id],
+              name,
+              lastModified: Date.now()
+            }
+          }
+        };
+      }
+      return state;
+    }
+
     case `${FETCH_SPACES}/pending`:
       return {
         ...state,
@@ -164,7 +195,8 @@ export default function spacesReducer(
             ...state.spaces,
             [windowId]: {
               ...state.spaces[windowId],
-              name
+              name,
+              lastModified: Date.now()
             }
           }
         };

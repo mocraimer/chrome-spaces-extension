@@ -71,7 +71,8 @@ jest.mock('../popup/store', () => ({
       isLoading: false,
       error: null,
       selectedSpaceId: '1',
-      searchQuery: ''
+      searchQuery: '',
+      editMode: false
     }
   }))
 }));

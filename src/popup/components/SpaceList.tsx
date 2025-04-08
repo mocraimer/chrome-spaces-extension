@@ -1,9 +1,10 @@
 import React from 'react';
 import { Space } from '@/shared/types/Space';
 import { useAppSelector, useAppDispatch } from '../../shared/hooks/storeHooks';
-import { selectSpace } from '../store/slices/spacesSlice';
+import { selectSpace, toggleEditMode } from '../store/slices/spacesSlice';
 import { CssClasses } from '@/shared/constants';
 import { useContextMenu } from '../hooks/useContextMenu';
+import SpaceItem from './SpaceItem';
 
 interface SpaceListProps {
   spaces: Record<string, Space>;
@@ -18,6 +19,7 @@ export const SpaceList: React.FC<SpaceListProps> = ({
 }) => {
   const selectedSpaceId = useAppSelector(state => state.spaces.selectedSpaceId);
   const currentWindowId = useAppSelector(state => state.spaces.currentWindowId);
+  const editMode = useAppSelector(state => state.spaces.editMode);
   const dispatch = useAppDispatch();
 
   const handleSpaceClick = (spaceId: string) => {
@@ -58,6 +60,16 @@ export const SpaceList: React.FC<SpaceListProps> = ({
 
   return (
     <>
+      <div className="space-list-header">
+        <h2>{type === 'active' ? 'Active Spaces' : 'Closed Spaces'}</h2>
+        <button
+          onClick={() => dispatch(toggleEditMode())}
+          className="edit-mode-toggle"
+          aria-label={editMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
+        >
+          {editMode ? '✓' : '✎'}
+        </button>
+      </div>
       <ul className="space-list">
         {Object.entries(spaces).map(([id, space]) => {
           const isSelected = id === selectedSpaceId;
@@ -73,28 +85,13 @@ export const SpaceList: React.FC<SpaceListProps> = ({
               onContextMenu={showContextMenu}
               data-id={id}
             >
-              <div className="space-info">
-                <span className="space-icon">
-                  {type === 'active' ? '🖥️' : '📁'}
-                </span>
-                <span className="space-name">{space.name}</span>
-                <span className="space-tabs-count">
-                  {space.urls.length} {space.urls.length === 1 ? 'tab' : 'tabs'}
-                </span>
-              </div>
-
-              {!isCurrent && (
-                <div className="space-actions">
-                  <button
-                    className={type === 'active' ? 'switch-btn' : 'restore-btn'}
-                    onClick={(e) =>
-                      handleActionClick(e, id, type === 'active' ? 'switch' : 'restore')
-                    }
-                  >
-                    {type === 'active' ? 'Switch' : 'Restore'}
-                  </button>
-                </div>
-              )}
+              <SpaceItem
+                space={space}
+                isEditing={editMode}
+                onSwitchClick={(e) => handleActionClick(e, id, type === 'active' ? 'switch' : 'restore')}
+                showActions={!isCurrent}
+                actionLabel={type === 'active' ? 'Switch' : 'Restore'}
+              />
             </li>
           );
         })}

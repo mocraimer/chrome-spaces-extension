@@ -27,9 +27,10 @@ export class StorageManager implements IStorageManager {
     await executeChromeApi(
       async () => {
         const data = await chrome.storage.local.get(STORAGE_KEY);
+        const storedData = data[STORAGE_KEY] || {};
         await chrome.storage.local.set({
           [STORAGE_KEY]: {
-            ...data[STORAGE_KEY],
+            ...storedData,
             spaces,
             lastModified: Date.now()
           }
@@ -62,9 +63,10 @@ export class StorageManager implements IStorageManager {
     await executeChromeApi(
       async () => {
         const data = await chrome.storage.local.get(STORAGE_KEY);
+        const storedData = data[STORAGE_KEY] || {};
         await chrome.storage.local.set({
           [STORAGE_KEY]: {
-            ...data[STORAGE_KEY],
+            ...storedData,
             closedSpaces: spaces,
             lastModified: Date.now()
           }

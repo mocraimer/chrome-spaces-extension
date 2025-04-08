@@ -21,6 +21,7 @@ export interface Theme {
     md: string;
     lg: string;
     xl: string;
+    xxl: string;
   };
   borderRadius: {
     sm: string;
@@ -56,41 +57,42 @@ export interface Theme {
 
 export const lightTheme: Theme = {
   colors: {
-    primary: '#1a73e8',
-    primaryDark: '#1557b0',
+    primary: '#4f46e5', // Modern indigo
+    primaryDark: '#4338ca',
     background: {
       primary: '#ffffff',
-      secondary: '#f8f9fa'
+      secondary: '#f9fafb'
     },
     text: {
-      primary: '#202124',
-      secondary: '#5f6368'
+      primary: '#111827',
+      secondary: '#6b7280'
     },
-    border: '#dadce0',
-    error: '#d93025',
-    success: '#188038',
-    overlay: 'rgba(32, 33, 36, 0.6)'
+    border: '#e5e7eb',
+    error: '#ef4444',
+    success: '#10b981',
+    overlay: 'rgba(17, 24, 39, 0.5)'
   },
   spacing: {
     xs: '4px',
     sm: '8px',
     md: '16px',
     lg: '24px',
-    xl: '32px'
+    xl: '32px',
+    xxl: '48px'
   },
   borderRadius: {
     sm: '4px',
     md: '8px',
-    lg: '16px'
+    lg: '12px'
   },
   typography: {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif',
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     fontSize: {
-      xs: '12px',
-      sm: '14px',
-      md: '16px',
-      lg: '18px',
-      xl: '20px'
+      xs: '0.75rem',
+      sm: '0.875rem',
+      md: '1rem',
+      lg: '1.125rem',
+      xl: '1.25rem'
     },
     fontWeight: {
       normal: 400,
@@ -99,14 +101,14 @@ export const lightTheme: Theme = {
     }
   },
   transitions: {
-    fast: '0.1s ease',
-    normal: '0.2s ease',
-    slow: '0.3s ease'
+    fast: '0.15s ease',
+    normal: '0.3s ease',
+    slow: '0.5s ease'
   },
   shadows: {
-    sm: '0 1px 2px rgba(0, 0, 0, 0.1)',
+    sm: '0 1px 2px rgba(0, 0, 0, 0.05)',
     md: '0 2px 4px rgba(0, 0, 0, 0.1)',
-    lg: '0 4px 8px rgba(0, 0, 0, 0.1)'
+    lg: '0 4px 8px rgba(0, 0, 0, 0.15)'
   }
 };
 
@@ -155,6 +157,7 @@ export function generateThemeVariables(theme: Theme): string {
       --spacing-md: ${theme.spacing.md};
       --spacing-lg: ${theme.spacing.lg};
       --spacing-xl: ${theme.spacing.xl};
+      --spacing-xxl: ${theme.spacing.xxl};
       
       --border-radius-sm: ${theme.borderRadius.sm};
       --border-radius-md: ${theme.borderRadius.md};

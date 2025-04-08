@@ -100,7 +100,9 @@ export const SpaceHeader: React.FC = () => {
           >
             {currentSpace.name}
           </h2>
+          
         )}
+        {isEditing ? '✓' : '✎'}
       </div>
       <div className="space-stats">
         {currentSpace.urls.length} {currentSpace.urls.length === 1 ? 'tab' : 'tabs'}
@@ -111,8 +113,9 @@ export const SpaceHeader: React.FC = () => {
 
 // Styles
 const styles = `
+/* Updated styles using theme variables for modern spacing, typography, and borders */
 .space-header {
-  padding: 12px 16px;
+  padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--border-color);
   background: var(--background-primary);
 }
@@ -120,16 +123,16 @@ const styles = `
 .space-title {
   display: flex;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: var(--spacing-xs);
 }
 
 .space-name {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--transition-fast);
 }
 
 .space-name:hover {
@@ -138,16 +141,16 @@ const styles = `
 
 .space-name-input {
   width: 100%;
-  padding: 4px 8px;
-  font-size: 16px;
-  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
   border: 1px solid var(--primary-color);
-  border-radius: 4px;
+  border-radius: var(--border-radius-sm);
   outline: none;
 }
 
 .space-stats {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 `;

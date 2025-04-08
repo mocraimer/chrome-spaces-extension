@@ -13,6 +13,7 @@ export interface SpacesState {
   error: string | null;
   selectedSpaceId: string | null;
   searchQuery: string;
+  editMode: boolean;
 }
 
 // Action types
