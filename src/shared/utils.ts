@@ -34,10 +34,11 @@ const chromeOp = async <T>(
 
 // Type guards
 const guards = {
-  space: (x: unknown): x is Space => 
-    checks.isObj(x) && 
-    checks.hasProps(x, 'id', 'name', 'urls', 'lastModified') && 
-    checks.isArr(x.urls),
+  space: (x: unknown): x is Space =>
+    checks.isObj(x) &&
+    checks.hasProps(x, 'id', 'name', 'urls', 'lastModified', 'named') &&
+    checks.isArr(x.urls) &&
+    typeof x.named === 'boolean',
   
   action: (x: unknown): x is string => 
     typeof x === 'string' && x.length > 0

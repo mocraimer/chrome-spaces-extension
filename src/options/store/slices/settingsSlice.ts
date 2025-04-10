@@ -1,11 +1,12 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { isPlainObject } from '@reduxjs/toolkit';
 
-interface SettingsState {
+export interface SettingsState {
   general: {
     theme: 'light' | 'dark' | 'system';
     saveOnClose: boolean;
     confirmDeletion: boolean;
+    autoRestore: boolean;
   };
   shortcuts: {
     enabled: boolean;
@@ -20,6 +21,7 @@ const initialState: SettingsState = {
     theme: 'system',
     saveOnClose: true,
     confirmDeletion: true,
+    autoRestore: false,
   },
   shortcuts: {
     enabled: true,
@@ -39,6 +41,7 @@ export const isValidSettings = (settings: unknown): settings is SettingsState =>
     ['light', 'dark', 'system'].includes(s.general?.theme || '') &&
     typeof s.general?.saveOnClose === 'boolean' &&
     typeof s.general?.confirmDeletion === 'boolean' &&
+    typeof s.general?.autoRestore === 'boolean' &&
     isPlainObject(s.shortcuts) &&
     typeof s.shortcuts?.enabled === 'boolean' &&
     typeof s.shortcuts?.openPopup === 'string' &&

@@ -80,11 +80,13 @@ export class StateManager implements IStateManager {
         const urls = window.tabs.map(tab => this.tabManager.getTabUrl(tab));
         
         // Update existing space or create new one
-        if (this.spaces[windowId]) {
+        const existingSpace = this.spaces[windowId];
+        if (existingSpace) {
           updatedSpaces[windowId] = {
-            ...this.spaces[windowId],
+            ...existingSpace,
             urls,
-            lastModified: Date.now()
+            lastModified: Date.now(),
+            named: existingSpace.named // Preserve named status
           };
         } else if (!this.closedSpaces[windowId]) {
           // Only create new space if it's not in closed spaces
@@ -169,17 +171,22 @@ export class StateManager implements IStateManager {
     }
   }
 
-  async createSpace(windowId: number, initialUrls?: string[]): Promise<void> {
+  async createSpace(
+    windowId: number,
+    initialUrls?: string[],
+    options?: { name?: string; named?: boolean }
+  ): Promise<void> {
     const urls = initialUrls ||
       (await this.tabManager.getTabs(windowId)).map(tab => this.tabManager.getTabUrl(tab));
 
     // Load latest spaces to ensure we have the most up-to-date data
     const latestSpaces = await this.storageManager.loadSpaces();
     
-    // Generate a unique name for the space
-    const name = `${DEFAULT_SPACE_NAME} ${windowId}`;
+    // Use provided name or generate default
+    const name = options?.name || `${DEFAULT_SPACE_NAME} ${windowId}`;
+    const isNamed = options?.named ?? false;
     
-    // Check for duplicate names
+    // Check for duplicate names if named
     const usedNames = Object.values(latestSpaces).map(space => space.name);
     if (usedNames.includes(name)) {
       // If name exists, create a unique variant
@@ -195,7 +202,7 @@ export class StateManager implements IStateManager {
         name: uniqueName,
         urls,
         lastModified: Date.now(),
-        named: false // New spaces start as unnamed
+        named: isNamed
       };
       
       this.spaces[windowId.toString()] = newSpace;
@@ -206,7 +213,7 @@ export class StateManager implements IStateManager {
         name,
         urls,
         lastModified: Date.now(),
-        named: false // New spaces start as unnamed
+        named: isNamed
       };
       
       this.spaces[windowId.toString()] = newSpace;

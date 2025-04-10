@@ -2,6 +2,7 @@ import React from 'react';
 import { useTheme } from '../../../popup/styles/ThemeProvider';
 import { useImportExportService } from '../../hooks/useImportExportService';
 import ImportExport from '../import-export/ImportExport';
+import GeneralSettings from '../general/GeneralSettings';
 import {
   LayoutContainer,
   Header,
@@ -26,8 +27,8 @@ const OptionsLayout: React.FC<OptionsLayoutProps> = ({ children }) => {
         <HeaderTitle>Chrome Spaces Settings</HeaderTitle>
       </Header>
       <Main>
-        <Section>
-          {children}
+        <Section aria-labelledby="general-settings-heading">
+          <GeneralSettings />
         </Section>
         
         {importExportService && (
