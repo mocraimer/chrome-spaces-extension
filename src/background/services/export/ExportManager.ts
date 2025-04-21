@@ -88,7 +88,8 @@ export class ExportManager {
       name: space.name,
       urls: space.urls.filter(url => url.trim().length > 0),
       lastModified: space.lastModified,
-      named: space.named
+      named: space.named,
+      version: space.version || 1
     };
   }
 }

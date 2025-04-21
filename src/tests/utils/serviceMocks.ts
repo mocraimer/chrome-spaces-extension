@@ -55,6 +55,7 @@ export function createMockSpace(id: string, name: string): Space {
     name,
     urls: [],
     lastModified: Date.now(),
-    named: false
+    named: false,
+    version: 1 // Initialize version for sync tracking
   };
 }

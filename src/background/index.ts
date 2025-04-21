@@ -3,6 +3,8 @@ import { TabManager } from './services/TabManager';
 import { StorageManager } from './services/StorageManager';
 import { StateManager } from './services/StateManager';
 import { MessageHandler } from './services/MessageHandler';
+import { StateUpdateQueue } from './services/StateUpdateQueue';
+import { StateBroadcastService } from './services/StateBroadcastService';
 import { Events, STARTUP_DELAY, RECOVERY_CHECK_DELAY } from '@/shared/constants';
 import { SettingsState } from '@/options/store/slices/settingsSlice';
 
@@ -18,10 +20,20 @@ class BackgroundService {
     this.windowManager = new WindowManager();
     this.tabManager = new TabManager();
     this.storageManager = new StorageManager();
+    const updateQueue = new StateUpdateQueue({
+      debounceTime: 100,
+      maxQueueSize: 50,
+      validateUpdates: true
+    });
+    
+    const broadcastService = new StateBroadcastService();
+    
     this.stateManager = new StateManager(
       this.windowManager,
       this.tabManager,
-      this.storageManager
+      this.storageManager,
+      updateQueue,
+      broadcastService
     );
     this.messageHandler = new MessageHandler(
       this.windowManager,

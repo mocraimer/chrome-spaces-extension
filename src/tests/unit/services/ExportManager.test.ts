@@ -13,7 +13,8 @@ describe('ExportManager', () => {
     name: 'Test Space',
     urls: ['https://example.com'],
     lastModified: Date.now(),
-    named: true
+    named: true,
+    version: 1
   };
 
   const mockState: SpaceState = {

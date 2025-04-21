@@ -18,7 +18,8 @@ describe('Space Import/Export Integration', () => {
     name: 'Test Space',
     urls: ['https://example.com'],
     lastModified: Date.now(),
-    named: true
+    named: true,
+    version: 1
   };
 
   const mockState = {
@@ -65,7 +66,22 @@ describe('Space Import/Export Integration', () => {
       saveClosedSpaces: jest.fn().mockResolvedValue(undefined)
     } as unknown as jest.Mocked<StorageManager>;
 
-    stateManager = new StateManager(windowManager, tabManager, storageManager);
+    const updateQueue = {
+      processQueue: jest.fn(),
+      enqueue: jest.fn()
+    } as any;
+    
+    const broadcastService = {
+      broadcast: jest.fn()
+    } as any;
+
+    stateManager = new StateManager(
+      windowManager,
+      tabManager,
+      storageManager,
+      updateQueue,
+      broadcastService
+    );
     importExportService = new SpaceImportExportService(stateManager);
   });
 

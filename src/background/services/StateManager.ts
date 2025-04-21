@@ -1,6 +1,8 @@
 import { WindowManager } from './WindowManager';
 import { TabManager } from './TabManager';
 import { StorageManager } from './StorageManager';
+import { StateUpdateQueue, QueuedStateUpdate } from './StateUpdateQueue';
+import { StateBroadcastService } from './StateBroadcastService';
 import {
   DEFAULT_SPACE_NAME,
   SPACE_NAME_MAX_LENGTH,
@@ -9,6 +11,15 @@ import {
 import { StateManager as IStateManager } from '@/shared/types/Services';
 import type { Space } from '@/shared/types/Space';
 
+interface StateUpdateHandler {
+  (update: QueuedStateUpdate<Space>): void;
+}
+
+/**
+ * @module StateManager
+ * @description Manages synchronized space state across browser windows
+ * @author Senior Developer
+ */
 export class StateManager implements IStateManager {
   private spaces: Record<string, Space> = {};
   private closedSpaces: Record<string, Space> = {};
@@ -16,7 +27,9 @@ export class StateManager implements IStateManager {
   constructor(
     private windowManager: WindowManager,
     private tabManager: TabManager,
-    private storageManager: StorageManager
+    private storageManager: StorageManager,
+    private updateQueue: StateUpdateQueue,
+    private broadcastService: StateBroadcastService
   ) {}
 
   async initialize(): Promise<void> {
@@ -24,8 +37,14 @@ export class StateManager implements IStateManager {
     this.spaces = await this.storageManager.loadSpaces();
     this.closedSpaces = await this.storageManager.loadClosedSpaces();
     
+    // Initialize version if needed
+    await this.initializeVersions();
+    
     // Synchronize with current window state
     await this.synchronizeWindowsAndSpaces();
+    
+    // Set up state broadcast handling
+    this.broadcastService.onStateUpdate((update) => this.handleStateUpdate(update));
     
     // Listen for window changes
     chrome.windows.onCreated.addListener(() => this.synchronizeWindowsAndSpaces());
@@ -63,7 +82,10 @@ export class StateManager implements IStateManager {
     await this.storageManager.saveClosedSpaces(this.closedSpaces);
   }
 
-  async synchronizeWindowsAndSpaces(): Promise<void> {
+  /**
+   * Synchronizes window state with spaces and handles state updates
+   */
+  public async synchronizeWindowsAndSpaces(): Promise<void> {
     // Get current windows from Chrome
     const currentWindows = await this.windowManager.getAllWindows();
     const currentWindowIds = new Set(currentWindows.map(w => w.id!.toString()));
@@ -82,23 +104,46 @@ export class StateManager implements IStateManager {
         // Update existing space or create new one
         const existingSpace = this.spaces[windowId];
         if (existingSpace) {
-          updatedSpaces[windowId] = {
+          const updatedSpace = {
             ...existingSpace,
             urls,
             lastModified: Date.now(),
+            version: existingSpace.version + 1,
+            lastSync: Date.now(),
+            sourceWindowId: windowId,
             named: existingSpace.named // Preserve named status
           };
+          
+          // Queue the update
+          await this.updateQueue.enqueue({
+            id: windowId,
+            type: 'UPDATE_SPACE',
+            payload: updatedSpace
+          });
+          
+          updatedSpaces[windowId] = updatedSpace;
         } else if (!this.closedSpaces[windowId]) {
           // Only create new space if it's not in closed spaces
-          // Use DEFAULT_SPACE_NAME for consistency
           const name = `${DEFAULT_SPACE_NAME} ${windowId}`;
-          updatedSpaces[windowId] = {
+          const newSpace: Space = {
             id: windowId,
             name,
             urls,
             lastModified: Date.now(),
+            version: 1,
+            lastSync: Date.now(),
+            sourceWindowId: windowId,
             named: false // New spaces start as unnamed
           };
+          
+          // Queue the creation
+          await this.updateQueue.enqueue({
+            id: windowId,
+            type: 'CREATE_SPACE',
+            payload: newSpace
+          });
+          
+          updatedSpaces[windowId] = newSpace;
         }
       }
     }
@@ -106,12 +151,27 @@ export class StateManager implements IStateManager {
     // Move non-existent named windows to closed spaces if they aren't already closed
     for (const [id, space] of Object.entries(this.spaces)) {
       if (!currentWindowIds.has(id) && !this.closedSpaces[id] && space.named) {
-        this.closedSpaces[id] = {
+        const closedSpace = {
           ...space,
-          lastModified: Date.now()
+          lastModified: Date.now(),
+          version: space.version + 1,
+          lastSync: Date.now(),
+          sourceWindowId: chrome.windows.WINDOW_ID_CURRENT.toString()
         };
+        
+        // Queue the closure
+        await this.updateQueue.enqueue({
+          id,
+          type: 'CLOSE_SPACE',
+          payload: closedSpace
+        });
+        
+        this.closedSpaces[id] = closedSpace;
       }
     }
+
+    // Process all queued updates
+    await this.updateQueue.processQueue();
 
     // Update storage atomically
     this.spaces = updatedSpaces;
@@ -121,6 +181,57 @@ export class StateManager implements IStateManager {
     ]);
   }
 
+  /**
+   * Initialize version tracking for existing spaces
+   */
+  private async initializeVersions(): Promise<void> {
+    const timestamp = Date.now();
+    
+    // Initialize versions for active spaces
+    for (const space of Object.values(this.spaces)) {
+      if (!space.version) {
+        space.version = 1;
+        space.lastSync = timestamp;
+        space.sourceWindowId = chrome.windows.WINDOW_ID_CURRENT.toString();
+      }
+    }
+    
+    // Initialize versions for closed spaces
+    for (const space of Object.values(this.closedSpaces)) {
+      if (!space.version) {
+        space.version = 1;
+        space.lastSync = timestamp;
+        space.sourceWindowId = chrome.windows.WINDOW_ID_CURRENT.toString();
+      }
+    }
+    
+    // Save initialized versions
+    await Promise.all([
+      this.storageManager.saveSpaces(this.spaces),
+      this.storageManager.saveClosedSpaces(this.closedSpaces)
+    ]);
+  }
+
+  /**
+   * Handle incoming state updates from other windows
+   */
+  private async handleStateUpdate(update: QueuedStateUpdate<Space>): Promise<void> {
+    const incomingSpace = update.payload;
+    const existingSpace = this.spaces[incomingSpace.id];
+    
+    if (!existingSpace || incomingSpace.version > existingSpace.version) {
+      // Accept newer version
+      this.spaces[incomingSpace.id] = incomingSpace;
+      await this.storageManager.saveSpaces(this.spaces);
+    } else if (incomingSpace.version === existingSpace.version) {
+      // For same version, take most recent change
+      if (incomingSpace.lastModified > existingSpace.lastModified) {
+        this.spaces[incomingSpace.id] = incomingSpace;
+        await this.storageManager.saveSpaces(this.spaces);
+      }
+    }
+  }
+
   private async handleTabCreated(tab: chrome.tabs.Tab): Promise<void> {
     if (!tab.windowId) return;
 
@@ -128,9 +239,23 @@ export class StateManager implements IStateManager {
     const space = this.spaces[windowId];
     if (space) {
       const url = this.tabManager.getTabUrl(tab);
-      space.urls.push(url);
-      space.lastModified = Date.now();
-      await this.storageManager.saveSpaces(this.spaces);
+      
+      // Queue state update
+      await this.updateQueue.enqueue({
+        id: windowId,
+        type: 'UPDATE_SPACE',
+        payload: {
+          ...space,
+          urls: [...space.urls, url],
+          version: space.version + 1,
+          lastModified: Date.now(),
+          sourceWindowId: windowId,
+          lastSync: Date.now()
+        }
+      });
+      
+      // Process updates
+      await this.updateQueue.processQueue();
     }
   }
 
@@ -140,9 +265,24 @@ export class StateManager implements IStateManager {
     if (space) {
       // Get current tabs to update URLs
       const tabs = await this.tabManager.getTabs(info.windowId);
-      space.urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
-      space.lastModified = Date.now();
-      await this.storageManager.saveSpaces(this.spaces);
+      const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
+      
+      // Queue state update
+      await this.updateQueue.enqueue({
+        id: windowId,
+        type: 'UPDATE_SPACE',
+        payload: {
+          ...space,
+          urls,
+          version: space.version + 1,
+          lastModified: Date.now(),
+          sourceWindowId: windowId,
+          lastSync: Date.now()
+        }
+      });
+      
+      // Process updates
+      await this.updateQueue.processQueue();
     }
   }
 
@@ -153,9 +293,25 @@ export class StateManager implements IStateManager {
 
     const space = this.spaces[newWindowId];
     if (space) {
-      space.urls.push(url);
-      space.lastModified = Date.now();
-      await this.storageManager.saveSpaces(this.spaces);
+      const timestamp = Date.now();
+      const updatedSpace = {
+        ...space,
+        urls: [...space.urls, url],
+        version: space.version + 1,
+        lastModified: timestamp,
+        lastSync: timestamp,
+        sourceWindowId: newWindowId
+      };
+
+      // Queue the update
+      await this.updateQueue.enqueue({
+        id: newWindowId,
+        type: 'UPDATE_SPACE',
+        payload: updatedSpace
+      });
+
+      this.spaces[newWindowId] = updatedSpace;
+      await this.updateQueue.processQueue();
     }
   }
 
@@ -165,9 +321,25 @@ export class StateManager implements IStateManager {
     if (space) {
       // Get current tabs to update URLs
       const tabs = await this.tabManager.getTabs(info.oldWindowId);
-      space.urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
-      space.lastModified = Date.now();
-      await this.storageManager.saveSpaces(this.spaces);
+      const timestamp = Date.now();
+      const updatedSpace = {
+        ...space,
+        urls: tabs.map(tab => this.tabManager.getTabUrl(tab)),
+        version: space.version + 1,
+        lastModified: timestamp,
+        lastSync: timestamp,
+        sourceWindowId: oldWindowId
+      };
+
+      // Queue the update
+      await this.updateQueue.enqueue({
+        id: oldWindowId,
+        type: 'UPDATE_SPACE',
+        payload: updatedSpace
+      });
+
+      this.spaces[oldWindowId] = updatedSpace;
+      await this.updateQueue.processQueue();
     }
   }
 
@@ -188,6 +360,8 @@ export class StateManager implements IStateManager {
     
     // Check for duplicate names if named
     const usedNames = Object.values(latestSpaces).map(space => space.name);
+    const timestamp = Date.now();
+
     if (usedNames.includes(name)) {
       // If name exists, create a unique variant
       let counter = 1;
@@ -201,9 +375,19 @@ export class StateManager implements IStateManager {
         id: windowId.toString(),
         name: uniqueName,
         urls,
-        lastModified: Date.now(),
+        lastModified: timestamp,
+        version: 1,
+        lastSync: timestamp,
+        sourceWindowId: windowId.toString(),
         named: isNamed
       };
+
+      // Queue the creation
+      await this.updateQueue.enqueue({
+        id: windowId.toString(),
+        type: 'CREATE_SPACE',
+        payload: newSpace
+      });
       
       this.spaces[windowId.toString()] = newSpace;
     } else {
@@ -212,14 +396,34 @@ export class StateManager implements IStateManager {
         id: windowId.toString(),
         name,
         urls,
-        lastModified: Date.now(),
+        lastModified: timestamp,
+        version: 1,
+        lastSync: timestamp,
+        sourceWindowId: windowId.toString(),
         named: isNamed
       };
+
+      // Queue the creation
+      await this.updateQueue.enqueue({
+        id: windowId.toString(),
+        type: 'CREATE_SPACE',
+        payload: newSpace
+      });
       
       this.spaces[windowId.toString()] = newSpace;
     }
     
+    // Process updates and save
+    await this.updateQueue.processQueue();
     await this.storageManager.saveSpaces(this.spaces);
+    
+    // Broadcast creation
+    this.broadcastService.broadcast({
+      id: windowId.toString(),
+      type: 'CREATE_SPACE',
+      payload: this.spaces[windowId.toString()],
+      timestamp: Date.now()
+    });
     
     // Ensure state is synchronized
     await this.synchronizeWindowsAndSpaces();
@@ -316,21 +520,42 @@ export class StateManager implements IStateManager {
       throw new Error('Closed space not found');
     }
 
-    // Create restored space with new timestamp
+    const timestamp = Date.now();
+    
+    // Create restored space with new version
     const restoredSpace = {
       ...space,
-      lastModified: Date.now()
+      version: space.version + 1,
+      lastModified: timestamp,
+      lastSync: timestamp,
+      sourceWindowId: chrome.windows.WINDOW_ID_CURRENT.toString()
     };
+
+    // Queue the restore operation
+    await this.updateQueue.enqueue({
+      id: spaceId,
+      type: 'RESTORE_SPACE',
+      payload: restoredSpace
+    });
 
     // Update both states atomically
     this.spaces[spaceId] = restoredSpace;
     delete this.closedSpaces[spaceId];
 
-    // Save both states in a single operation
+    // Process updates and save
+    await this.updateQueue.processQueue();
     await Promise.all([
       this.storageManager.saveSpaces(this.spaces),
       this.storageManager.saveClosedSpaces(this.closedSpaces)
     ]);
+
+    // Broadcast restore
+    this.broadcastService.broadcast({
+      id: spaceId,
+      type: 'RESTORE_SPACE',
+      payload: restoredSpace,
+      timestamp
+    });
   }
 
   async getSpaceName(spaceId: string): Promise<string> {
@@ -363,9 +588,27 @@ export class StateManager implements IStateManager {
 
     // Remove from closed spaces if it exists
     if (this.closedSpaces[spaceId]) {
-      const { [spaceId]: _, ...remainingClosedSpaces } = this.closedSpaces;
+      const timestamp = Date.now();
+      const { [spaceId]: deletedSpace, ...remainingClosedSpaces } = this.closedSpaces;
+      
+      // Queue deletion
+      await this.updateQueue.enqueue({
+        id: spaceId,
+        type: 'DELETE_CLOSED_SPACE',
+        payload: { id: spaceId }
+      });
+
       this.closedSpaces = remainingClosedSpaces;
+      await this.updateQueue.processQueue();
       await this.storageManager.saveClosedSpaces(this.closedSpaces);
+
+      // Broadcast deletion
+      this.broadcastService.broadcast({
+        id: spaceId,
+        type: 'DELETE_CLOSED_SPACE',
+        payload: { id: spaceId },
+        timestamp
+      });
     }
   }
 }

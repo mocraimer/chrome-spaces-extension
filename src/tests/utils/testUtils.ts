@@ -32,7 +32,6 @@ export function createMockKeyboardEvent(init: MockKeyboardEventProps) {
     type: 'keydown'
   };
 
-  // Use type assertion since we only care about the properties we actually use
   return mockEvent as unknown as KeyboardEvent;
 }
 
@@ -61,6 +60,61 @@ export function createMockInputElement(value: string = '') {
   return input;
 }
 
+// Mock Chrome API
+export const mockChrome = {
+  windows: {
+    create: jest.fn(),
+    remove: jest.fn(),
+    update: jest.fn(),
+    get: jest.fn(),
+    getAll: jest.fn(),
+    getCurrent: jest.fn(),
+    onCreated: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    },
+    onRemoved: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    }
+  },
+  tabs: {
+    create: jest.fn(),
+    update: jest.fn(),
+    query: jest.fn(),
+    remove: jest.fn(),
+    get: jest.fn(),
+    onCreated: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    },
+    onRemoved: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    },
+    onAttached: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    },
+    onDetached: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    }
+  },
+  runtime: {
+    sendMessage: jest.fn(),
+    onMessage: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    }
+  },
+  system: {
+    display: {
+      getInfo: jest.fn()
+    }
+  }
+} as unknown as typeof chrome;
+
 // Types for testing with React Testing Library
 declare global {
   namespace jest {
@@ -71,3 +125,28 @@ declare global {
     }
   }
 }
+
+// Create mock event listener storage for simulating Chrome events
+export type ChromeEventListener = (...args: any[]) => void;
+
+export interface ChromeEventEmitter {
+  addListener: (callback: ChromeEventListener) => void;
+  removeListener: (callback: ChromeEventListener) => void;
+  hasListener: (callback: ChromeEventListener) => boolean;
+  hasListeners: () => boolean;
+  dispatch: (...args: any[]) => void;
+}
+
+export function createChromeEventEmitter(): ChromeEventEmitter {
+  const listeners = new Set<ChromeEventListener>();
+  
+  return {
+    addListener: (callback) => listeners.add(callback),
+    removeListener: (callback) => listeners.delete(callback),
+    hasListener: (callback) => listeners.has(callback),
+    hasListeners: () => listeners.size > 0,
+    dispatch: (...args) => listeners.forEach(listener => listener(...args))
+  };
+}
+
+export type MockChromeAPI = typeof mockChrome;

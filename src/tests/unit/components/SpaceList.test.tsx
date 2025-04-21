@@ -16,14 +16,16 @@ describe('SpaceList', () => {
       name: 'Test Space 1',
       urls: ['https://test1.com'],
       lastModified: Date.now(),
-      named: false
+      named: false,
+      version: 1
     },
     'space-2': {
       id: 'space-2',
       name: 'Test Space 2',
       urls: ['https://test2.com', 'https://test3.com'],
       lastModified: Date.now(),
-      named: false
+      named: false,
+      version: 1
     }
   };
 

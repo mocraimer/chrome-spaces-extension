@@ -1,9 +1,15 @@
+/**
+ * Represents a collection of tabs as a named space
+ */
 export interface Space {
   id: string;
   name: string;
   urls: string[];
   lastModified: number;
   named: boolean;
+  version: number; // Tracks state version for sync
+  lastSync?: number; // Last successful sync timestamp
+  sourceWindowId?: string; // ID of window that last modified this space
 }
 
 export interface SpaceState {

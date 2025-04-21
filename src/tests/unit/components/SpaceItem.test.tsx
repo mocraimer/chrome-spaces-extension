@@ -14,7 +14,8 @@ describe('SpaceItem', () => {
     name: 'Test Space',
     urls: ['https://test1.com'],
     lastModified: Date.now(),
-    named: false
+    named: false,
+    version: 1
   };
 
   const mockOnSwitchClick = jest.fn();

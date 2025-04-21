@@ -121,7 +121,8 @@ export class ImportManager {
       name: space.name,
       urls: [...space.urls], // Create new array
       lastModified: space.lastModified,
-      named: space.named
+      named: space.named,
+      version: space.version || 1 // Preserve version or set default
     };
   }
 

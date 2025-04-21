@@ -1,10 +1,16 @@
 import type { Space } from '@/shared/types/Space';
 
+/**
+ * Creates a mock Space object with specified ID and name
+ */
 export const createMockSpace = (id: string, name: string): Space => ({
   id,
   name,
   urls: [],
   lastModified: Date.now(),
+  version: 1,
+  lastSync: Date.now(),
+  sourceWindowId: '1', // Default source window
   named: false
 });
 

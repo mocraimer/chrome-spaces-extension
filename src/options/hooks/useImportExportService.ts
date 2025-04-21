@@ -4,6 +4,8 @@ import { StateManager } from '../../background/services/StateManager';
 import { WindowManager } from '../../background/services/WindowManager';
 import { TabManager } from '../../background/services/TabManager';
 import { StorageManager } from '../../background/services/StorageManager';
+import { StateUpdateQueue } from '../../background/services/StateUpdateQueue';
+import { StateBroadcastService } from '../../background/services/StateBroadcastService';
 
 export const useImportExportService = () => {
   const [service, setService] = useState<SpaceImportExportService | null>(null);
@@ -15,10 +17,20 @@ export const useImportExportService = () => {
         const tabManager = new TabManager();
         const storageManager = new StorageManager();
         
+        const updateQueue = new StateUpdateQueue({
+          debounceTime: 100,
+          maxQueueSize: 50,
+          validateUpdates: true
+        });
+        
+        const broadcastService = new StateBroadcastService();
+
         const stateManager = new StateManager(
           windowManager,
           tabManager,
-          storageManager
+          storageManager,
+          updateQueue,
+          broadcastService
         );
         
         await stateManager.initialize();

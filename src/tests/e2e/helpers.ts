@@ -44,7 +44,8 @@ export function createMockSpace(id: string, name: string, urls: string[] = ['htt
     name,
     urls,
     lastModified: Date.now(),
-    named: true
+    named: true,
+    version: 1
   };
 }
 

@@ -18,7 +18,15 @@ describe('MessageHandler', () => {
     // Set up mocks
     windowManager = new WindowManager() as jest.Mocked<WindowManager>;
     tabManager = new TabManager() as jest.Mocked<TabManager>;
-    stateManager = new StateManager(windowManager, tabManager, {} as any) as jest.Mocked<StateManager>;
+    const updateQueue = { processQueue: jest.fn() } as any;
+    const broadcastService = { broadcast: jest.fn() } as any;
+    stateManager = new StateManager(
+      windowManager,
+      tabManager,
+      {} as any,
+      updateQueue,
+      broadcastService
+    ) as jest.Mocked<StateManager>;
 
     // Mock chrome.commands.onCommand listener
     global.chrome = {
@@ -38,9 +46,9 @@ describe('MessageHandler', () => {
 
   describe('keyboard commands', () => {
     const mockSpaces = {
-      '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now(), named: false },
-      '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now(), named: false },
-      '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now(), named: false }
+      '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now(), named: false, version: 1 },
+      '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now(), named: false, version: 1 },
+      '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now(), named: false, version: 1 }
     };
 
     beforeEach(() => {
