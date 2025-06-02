@@ -30,3 +30,10 @@ yarn-error.log*
 # Chrome extension specific
 *.pem
 *.crx
+playwright-report/data/d606c7545cd71c2b0c27d9f99edbad4fa39f1174.png
+playwright-report/
+test-results/
+test-results/enhanced-popup-Enhanced-Po-ac2c3--auto-focuses-on-popup-open-chromium/test-failed-1.png
+test-results/enhanced-popup-Enhanced-Po-ac2c3--auto-focuses-on-popup-open-chromium/test-failed-2.png
+test-results/enhanced-popup-Enhanced-Po-ac2c3--auto-focuses-on-popup-open-chromium/test-failed-3.png
+test-results/enhanced-popup-Enhanced-Po-ac2c3--auto-focuses-on-popup-open-chromium/test-failed-4.png

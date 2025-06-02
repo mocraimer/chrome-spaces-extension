@@ -449,7 +449,8 @@ const EnhancedPopup: React.FC = () => {
           customName: space.customName,
           urls: space.urls,
           closedAt: Date.now(),
-          originalWindowId: space.windowId
+          originalWindowId: space.windowId,
+          permanentId: space.permanentId
         };
         
         const updatedClosed = [...closedSpaces, newClosedSpace];
@@ -495,7 +496,7 @@ const EnhancedPopup: React.FC = () => {
     const success = await saveCustomName(space.permanentId, editingName, space.name);
     if (success) {
       // Update local state
-      if (space.isActive) {
+      if ('windowId' in space && space.windowId) {
         setSpaces(prev => prev.map(s => 
           s.id === editingSpaceId 
             ? { ...s, customName: editingName.trim() }
