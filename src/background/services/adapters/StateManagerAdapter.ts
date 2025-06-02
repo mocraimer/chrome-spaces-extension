@@ -31,6 +31,8 @@ export class StateManagerAdapter {
 
   private async importActiveSpaces(spaces: Record<string, any>): Promise<void> {
     for (const [id, space] of Object.entries(spaces)) {
+      const windowId = parseInt(id);
+      await this.stateManager.createSpace(windowId);
       await this.stateManager.setSpaceName(id, space.name);
     }
 
@@ -46,12 +48,13 @@ export class StateManagerAdapter {
   private async importClosedSpaces(spaces: Record<string, any>): Promise<void> {
     // First import them as active spaces
     for (const [id, space] of Object.entries(spaces)) {
-      // Create the space with its URLs and set its name
-      await this.stateManager.createSpace(parseInt(id), space.urls);
+      const windowId = parseInt(id);
+      // Create the space and set its name
+      await this.stateManager.createSpace(windowId);
       await this.stateManager.setSpaceName(id, space.name);
       
       // Then close it to move it to closed spaces
-      await this.stateManager.closeSpace(parseInt(id));
+      await this.stateManager.closeSpace(windowId);
     }
 
     // Broadcast state update

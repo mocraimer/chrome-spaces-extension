@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import { Space } from '@/shared/types/Space';
 import { useAppSelector, useAppDispatch } from '../../shared/hooks/storeHooks';
-import { selectSpace, toggleEditMode } from '../store/slices/spacesSlice';
+import { selectSpace } from '../store/slices/spacesSlice';
 import { CssClasses } from '@/shared/constants';
 import { useContextMenu } from '../hooks/useContextMenu';
+import { FixedSizeList, ListChildComponentProps } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
 import SpaceItem from './SpaceItem';
+import useIntersectionObserver from '../hooks/useIntersectionObserver';
+import { injectListStyles } from './SpaceList.styles';
+
+const SPACE_ITEM_HEIGHT = 72; // Height of each space item in pixels
+const INITIAL_LOAD_COUNT = 10; // Number of items to load initially
 
 interface SpaceListProps {
   spaces: Record<string, Space>;
@@ -17,6 +24,10 @@ export const SpaceList: React.FC<SpaceListProps> = ({
   type,
   onSpaceAction
 }) => {
+  useEffect(() => {
+    injectListStyles();
+  }, []);
+
   const selectedSpaceId = useAppSelector(state => state.spaces.selectedSpaceId);
   const currentWindowId = useAppSelector(state => state.spaces.currentWindowId);
   const editMode = useAppSelector(state => state.spaces.editMode);
@@ -35,6 +46,9 @@ export const SpaceList: React.FC<SpaceListProps> = ({
     onSpaceAction(spaceId, action);
   };
 
+  // All hooks must be called before any conditional returns
+  const [loadedCount, setLoadedCount] = React.useState(INITIAL_LOAD_COUNT);
+  
   const { show: showContextMenu, ContextMenu } = useContextMenu({
     items: [
       {
@@ -57,38 +71,70 @@ export const SpaceList: React.FC<SpaceListProps> = ({
       </div>
     );
   }
+  const sortedSpaces = useMemo(() => {
+    return Object.entries(spaces)
+      .sort(([, a], [, b]) => b.lastModified - a.lastModified)
+      .slice(0, loadedCount);
+  }, [spaces, loadedCount]);
+
+  const loadMoreRef = React.useRef(null);
+  const handleLoadMore = useCallback(() => {
+    if (Object.keys(spaces).length > loadedCount) {
+      setLoadedCount(prev => prev + INITIAL_LOAD_COUNT);
+    }
+  }, [spaces, loadedCount]);
+  
+  useIntersectionObserver(loadMoreRef, handleLoadMore);
+
+  const Row = useCallback(({ index, style, data }: ListChildComponentProps<[string, Space][]>) => {
+    const [id, space] = data![index];
+    const isSelected = id === selectedSpaceId;
+    const isCurrent = id === currentWindowId;
+
+    return (
+      <li
+        style={style}
+        className={`${CssClasses.SPACE_ITEM} ${
+          isSelected ? CssClasses.ENTER_TARGET : ''
+        } ${isCurrent ? 'current' : ''}`}
+        onClick={() => handleSpaceClick(id)}
+        onContextMenu={showContextMenu}
+        data-id={id}
+      >
+        <SpaceItem
+          space={space}
+          onSwitchClick={(e) => handleActionClick(e, id, type === 'active' ? 'switch' : 'restore')}
+          showActions={!isCurrent}
+          actionLabel={type === 'active' ? 'Switch' : 'Restore'}
+          isEditing={editMode && isSelected}
+          isLoaded={index < loadedCount}
+        />
+      </li>
+    );
+  }, [selectedSpaceId, currentWindowId, handleSpaceClick, showContextMenu, type, editMode, loadedCount]);
 
   return (
     <>
       <div className="space-list-header">
         <h2>{type === 'active' ? 'Active Spaces' : 'Closed Spaces'}</h2>
       </div>
-      <ul className="space-list">
-        {Object.entries(spaces).map(([id, space]) => {
-          const isSelected = id === selectedSpaceId;
-          const isCurrent = id === currentWindowId;
-
-          return (
-            <li
-              key={id}
-              className={`${CssClasses.SPACE_ITEM} ${
-                isSelected ? CssClasses.ENTER_TARGET : ''
-              } ${isCurrent ? 'current' : ''}`}
-              onClick={() => handleSpaceClick(id)}
-              onContextMenu={showContextMenu}
-              data-id={id}
+      <div className="space-list-container">
+        <AutoSizer>
+          {({ height, width }: { height: number; width: number }) => (
+            <FixedSizeList<[string, Space][]>
+              height={height}
+              itemCount={sortedSpaces.length}
+              itemSize={SPACE_ITEM_HEIGHT}
+              width={width}
+              overscanCount={5}
+              itemData={sortedSpaces}
             >
-              <SpaceItem
-                space={space}
-                onSwitchClick={(e) => handleActionClick(e, id, type === 'active' ? 'switch' : 'restore')}
-                showActions={!isCurrent}
-                actionLabel={type === 'active' ? 'Switch' : 'Restore'}
-                isEditing={editMode && isSelected}
-              />
-            </li>
-          );
-        })}
-      </ul>
+              {Row}
+            </FixedSizeList>
+          )}
+        </AutoSizer>
+      </div>
+      <div ref={loadMoreRef} className="infinite-scroll-trigger" />
       <ContextMenu />
     </>
   );

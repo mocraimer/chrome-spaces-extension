@@ -9,6 +9,7 @@ interface SpaceItemProps {
   showActions: boolean;
   actionLabel: string;
   isEditing: boolean;
+  isLoaded?: boolean;
 }
 
 const SpaceItem: React.FC<SpaceItemProps> = ({
@@ -16,7 +17,8 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
   onSwitchClick,
   showActions,
   actionLabel,
-  isEditing
+  isEditing,
+  isLoaded = true
 }) => {
   const [editedName, setEditedName] = React.useState(space.name);
   const dispatch = useAppDispatch();
@@ -30,9 +32,17 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
   };
 
   return (
-    <div className="space-info">
-      <span className="space-icon">🖥️</span>
-      {isEditing ? (
+    <div className={`space-info ${!isLoaded ? 'loading' : ''}`}>
+      {!isLoaded ? (
+        <>
+          <div className="skeleton icon-skeleton" />
+          <div className="skeleton name-skeleton" />
+          <div className="skeleton tabs-skeleton" />
+        </>
+      ) : (
+        <>
+          <span className="space-icon">🖥️</span>
+          {isEditing ? (
         <input
           type="text"
           data-testid="space-name-input"
@@ -43,9 +53,11 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
       ) : (
         <span className="space-name">{space.name}</span>
       )}
-      <span className="space-tabs-count">
-        {space.urls.length} {space.urls.length === 1 ? 'tab' : 'tabs'}
-      </span>
+          <span className="space-tabs-count">
+            {space.urls.length} {space.urls.length === 1 ? 'tab' : 'tabs'}
+          </span>
+        </>
+      )}
       <div className="space-actions">
         {isEditing ? (
           <>
@@ -69,6 +81,40 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
 
 // Styles
 const itemStyles = `
+.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--background-secondary) 25%, var(--background-tertiary) 50%, var(--background-secondary) 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+  border-radius: var(--border-radius-xs);
+}
+
+.icon-skeleton {
+  width: 24px;
+  height: 24px;
+  margin-right: var(--spacing-xs);
+}
+
+.name-skeleton {
+  width: 120px;
+  height: 20px;
+  margin-right: var(--spacing-sm);
+}
+
+.tabs-skeleton {
+  width: 60px;
+  height: 16px;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .space-info {
   display: flex;
   align-items: center;

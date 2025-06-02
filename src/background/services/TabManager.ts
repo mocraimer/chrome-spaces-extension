@@ -24,6 +24,18 @@ export class TabManager implements ITabManager {
   }
 
   /**
+   * Create multiple tabs in a window
+   */
+  async createTabs(windowId: number, urls: string[]): Promise<chrome.tabs.Tab[]> {
+    return executeChromeApi(
+      () => Promise.all(
+        urls.map(url => chrome.tabs.create({ windowId, url }))
+      ),
+      'TAB_ERROR'
+    );
+  }
+
+  /**
    * Move a tab to a different window
    */
   async moveTab(tabId: number, windowId: number): Promise<chrome.tabs.Tab> {

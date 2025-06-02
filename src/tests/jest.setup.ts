@@ -49,6 +49,29 @@ const mockChrome = {
 };
 
 global.chrome = mockChrome as any;
+
+// Mock window.matchMedia for theme tests
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
+
+// Mock IntersectionObserver
+(global as any).IntersectionObserver = jest.fn().mockImplementation((callback, options) => ({
+  observe: jest.fn(),
+  disconnect: jest.fn(),
+  unobserve: jest.fn(),
+}));
+
 // Mock Redux hooks
 const mockDispatch = jest.fn();
 

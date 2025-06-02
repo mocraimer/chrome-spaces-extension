@@ -1,4 +1,12 @@
-import { QueuedStateUpdate } from './StateUpdateQueue';
+import { QueuedStateUpdate, StateUpdatePriority } from './StateUpdateQueue';
+
+function debounce(fn: Function, delay: number): () => void {
+  let timeoutId: NodeJS.Timeout;
+  return () => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(), delay);
+  };
+}
 
 /**
  * Handler for state update events
@@ -18,11 +26,32 @@ interface ConnectedWindow {
 /**
  * Service for managing cross-window state synchronization
  */
+export interface BroadcastOptions {
+  /** Debounce time for non-critical broadcasts in ms */
+  debounceTime?: number;
+  /** Whether to coalesce rapid updates */
+  coalesceUpdates?: boolean;
+}
+
 export class StateBroadcastService {
   private connections: ConnectedWindow[] = [];
   private static readonly CONNECTION_NAME = 'state-sync';
+  private debouncedBroadcast: () => void;
+  private pendingUpdates: Map<string, QueuedStateUpdate> = new Map();
+  private options: Required<BroadcastOptions>;
 
-  constructor() {
+  constructor(options: BroadcastOptions = {}) {
+    this.options = {
+      debounceTime: options.debounceTime ?? 100,
+      coalesceUpdates: options.coalesceUpdates ?? true
+    };
+
+    // Initialize debounced broadcast
+    this.debouncedBroadcast = debounce(
+      () => this.processPendingBroadcasts(),
+      this.options.debounceTime
+    );
+
     // Listen for connection attempts from windows
     chrome.runtime.onConnect.addListener(this.handleConnect.bind(this));
   }
@@ -75,9 +104,70 @@ export class StateBroadcastService {
   /**
    * Broadcasts a state update to all connected windows
    */
+  /**
+   * Broadcasts a state update to all connected windows
+   */
   public broadcast(update: QueuedStateUpdate): void {
-    // No sender ID means broadcast to all windows
-    this.handleStateUpdate(update, -1);
+    const isCritical = update.priority === StateUpdatePriority.CRITICAL;
+
+    if (isCritical) {
+      // Process critical updates immediately
+      this.handleStateUpdate(update, -1);
+      return;
+    }
+
+    if (this.options.coalesceUpdates) {
+      // Coalesce rapid updates of the same type
+      this.pendingUpdates.set(update.type, this.coalesceUpdate(update));
+      this.debouncedBroadcast();
+    } else {
+      // Queue update for debounced broadcast
+      this.pendingUpdates.set(update.id, update);
+      this.debouncedBroadcast();
+    }
+  }
+
+  /**
+   * Coalesces a new update with existing pending update of same type
+   */
+  private coalesceUpdate(update: QueuedStateUpdate): QueuedStateUpdate {
+    const existing = this.pendingUpdates.get(update.type);
+    if (!existing) return update;
+
+    return {
+      ...update,
+      payload: this.mergePayloads(existing.payload, update.payload)
+    };
+  }
+
+  /**
+   * Merges update payloads based on their type
+   */
+  private mergePayloads(oldPayload: any, newPayload: any): any {
+    if (Array.isArray(oldPayload) && Array.isArray(newPayload)) {
+      // For arrays, keep only latest unique items
+      return [...new Set([...oldPayload, ...newPayload])];
+    } else if (typeof oldPayload === 'object' && typeof newPayload === 'object') {
+      // For objects, do deep merge
+      return { ...oldPayload, ...newPayload };
+    }
+    // For primitive values, take the new one
+    return newPayload;
+  }
+
+  /**
+   * Processes all pending broadcasts
+   */
+  private processPendingBroadcasts(): void {
+    if (this.pendingUpdates.size === 0) return;
+
+    // Process all pending updates
+    for (const update of this.pendingUpdates.values()) {
+      this.handleStateUpdate(update, -1);
+    }
+
+    // Clear pending updates
+    this.pendingUpdates.clear();
   }
 
   /**

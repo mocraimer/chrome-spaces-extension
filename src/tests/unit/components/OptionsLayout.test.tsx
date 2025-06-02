@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import OptionsLayout from '../../../options/components/layout/OptionsLayout';
+import { renderWithProviders } from '../../utils/testUtils';
 
 // Mock the useTheme hook to control the theme
 jest.mock('../../../popup/styles/ThemeProvider', () => ({
@@ -12,7 +13,7 @@ jest.mock('../../../popup/styles/ThemeProvider', () => ({
 
 describe('OptionsLayout Component', () => {
   it('should render with light theme by default', () => {
-    const { container } = render(<OptionsLayout>Test Content</OptionsLayout>);
+    const { container } = renderWithProviders(<OptionsLayout>Test Content</OptionsLayout>);
     const layoutDiv = container.querySelector('.options-layout');
     expect(layoutDiv).toBeInTheDocument();
     expect(layoutDiv?.className).toContain('light');
@@ -25,21 +26,21 @@ describe('OptionsLayout Component', () => {
       toggleTheme: jest.fn()
     }));
 
-    const { container } = render(<OptionsLayout>Test Content</OptionsLayout>);
+    const { container } = renderWithProviders(<OptionsLayout>Test Content</OptionsLayout>);
     const layoutDiv = container.querySelector('.options-layout');
     expect(layoutDiv).toBeInTheDocument();
     expect(layoutDiv?.className).toContain('dark');
   });
 
   it('should render header with correct title', () => {
-    render(<OptionsLayout>Test Content</OptionsLayout>);
+    renderWithProviders(<OptionsLayout>Test Content</OptionsLayout>);
     const header = screen.getByText('Chrome Spaces Settings');
     expect(header).toBeInTheDocument();
   });
 
   it('should render children content in the main section', () => {
     const testChild = 'Test Child Content';
-    const { container } = render(<OptionsLayout>{testChild}</OptionsLayout>);
+    const { container } = renderWithProviders(<OptionsLayout>{testChild}</OptionsLayout>);
     const main = container.querySelector('.options-main');
     expect(main).toBeInTheDocument();
     expect(main).toHaveTextContent(testChild);
@@ -47,7 +48,7 @@ describe('OptionsLayout Component', () => {
 
   it('should render footer with the current year', () => {
     const currentYear = new Date().getFullYear().toString();
-    const { container } = render(<OptionsLayout>Footer Test</OptionsLayout>);
+    const { container } = renderWithProviders(<OptionsLayout>Footer Test</OptionsLayout>);
     const footer = container.querySelector('.options-footer');
     expect(footer).toBeInTheDocument();
     expect(footer?.textContent).toContain(currentYear);

@@ -1,7 +1,7 @@
 import { Space } from './Space';
 
 export interface WindowManager {
-  createWindow(urls: string[]): Promise<chrome.windows.Window>;
+  createWindow(urls: string[], options?: chrome.windows.CreateData): Promise<chrome.windows.Window>;
   closeWindow(windowId: number): Promise<void>;
   switchToWindow(windowId: number): Promise<void>;
   getWindow(windowId: number): Promise<chrome.windows.Window>;
@@ -25,6 +25,7 @@ export interface TabManager {
   getTabs(windowId: number): Promise<chrome.tabs.Tab[]>;
   getTabUrl(tab: chrome.tabs.Tab): string;
   createTab(windowId: number, url: string): Promise<chrome.tabs.Tab>;
+  createTabs(windowId: number, urls: string[]): Promise<chrome.tabs.Tab[]>;
   moveTab(tabId: number, windowId: number): Promise<chrome.tabs.Tab>;
   removeTab(tabId: number): Promise<void>;
   updateTab(tabId: number, updateProperties: chrome.tabs.UpdateProperties): Promise<chrome.tabs.Tab>;
@@ -48,6 +49,10 @@ export interface StateManager {
   createSpace(windowId: number): Promise<void>;
   closeSpace(windowId: number): Promise<void>;
   renameSpace(windowId: number, name: string): Promise<void>;
+  getSpaceById(spaceId: string): Promise<Space | null>;
+  updateSpaceWindow(spaceId: string, window: chrome.windows.Window): Promise<void>;
+  restoreSpace(spaceId: string): Promise<void>;
+  deleteClosedSpace(spaceId: string): Promise<void>;
 }
 
 export interface MessageHandler {
@@ -56,4 +61,12 @@ export interface MessageHandler {
     sender: chrome.runtime.MessageSender,
     sendResponse: (response?: any) => void
   ): Promise<void>;
+}
+
+export interface QueuedStateUpdate<T = any> {
+  id: string;
+  type: string;
+  timestamp: number;
+  payload: T;
+  priority?: number;
 }

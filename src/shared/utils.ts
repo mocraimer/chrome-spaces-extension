@@ -1,4 +1,4 @@
-import { ErrorMessages } from './constants';
+import { ErrorMessages, ActionTypes, MessageTypes } from './constants';
 import type { Space } from './types/Space';
 
 // Safety-focused type checks
@@ -40,8 +40,14 @@ const guards = {
     checks.isArr(x.urls) &&
     typeof x.named === 'boolean',
   
-  action: (x: unknown): x is string => 
-    typeof x === 'string' && x.length > 0
+  action: (x: unknown): x is keyof typeof ActionTypes | keyof typeof MessageTypes => {
+    if (typeof x !== 'string' || x.length === 0) return false;
+    const validActions = [
+      ...Object.values(ActionTypes),
+      ...Object.values(MessageTypes)
+    ];
+    return validActions.includes(x as any);
+  }
 };
 
 // JSON safety

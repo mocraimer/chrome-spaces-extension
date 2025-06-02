@@ -24,12 +24,23 @@ export interface QueuedStateUpdate<T = any> {
  * Configuration options for state updates
  */
 export interface StateUpdateOptions {
+  /** Batch window time in milliseconds */
+  batchWindow?: number;
   /** Debounce time in milliseconds for storage commits */
   debounceTime?: number;
   /** Maximum queue size before forced processing */
   maxQueueSize?: number;
   /** Whether to validate updates before processing */
   validateUpdates?: boolean;
+  /** Whether to compress state diffs */
+  compressDiffs?: boolean;
+}
+
+export enum StateUpdatePriority {
+  CRITICAL = 1,
+  HIGH = 2,
+  NORMAL = 3,
+  LOW = 4
 }
 
 /**
@@ -51,15 +62,53 @@ export class StateUpdateQueue {
   private options: Required<StateUpdateOptions>;
   private rollbackSnapshot: QueuedStateUpdate[] = [];
   
+  private batchTimeout: NodeJS.Timeout | null = null;
+  private batchedUpdates: Map<string, QueuedStateUpdate> = new Map();
+
   constructor(options: StateUpdateOptions = {}) {
     this.options = {
+      batchWindow: options.batchWindow ?? 50,
       debounceTime: options.debounceTime ?? 200,
       maxQueueSize: options.maxQueueSize ?? 100,
-      validateUpdates: options.validateUpdates ?? true
+      validateUpdates: options.validateUpdates ?? true,
+      compressDiffs: options.compressDiffs ?? true
     };
 
     // Initialize debounced storage commit
     this.commitToStorage = debounce(this.processStorageCommit.bind(this), this.options.debounceTime);
+  }
+
+  /**
+   * Compresses state diff by removing redundant updates
+   */
+  private compressStateDiff(update: QueuedStateUpdate): QueuedStateUpdate {
+    if (!this.options.compressDiffs) return update;
+
+    // If this update supersedes a previous one for the same type, merge them
+    const existing = this.batchedUpdates.get(update.type);
+    if (existing && existing.timestamp + this.options.batchWindow! > Date.now()) {
+      return {
+        ...update,
+        payload: this.mergePayloads(existing.payload, update.payload)
+      };
+    }
+
+    return update;
+  }
+
+  /**
+   * Merges two update payloads intelligently
+   */
+  private mergePayloads(oldPayload: any, newPayload: any): any {
+    if (Array.isArray(oldPayload) && Array.isArray(newPayload)) {
+      // For arrays, keep only latest unique items
+      return [...new Set([...oldPayload, ...newPayload])];
+    } else if (typeof oldPayload === 'object' && typeof newPayload === 'object') {
+      // For objects, do deep merge
+      return { ...oldPayload, ...newPayload };
+    }
+    // For primitive values, take the new one
+    return newPayload;
   }
 
   /**
@@ -69,7 +118,8 @@ export class StateUpdateQueue {
     try {
       const queuedUpdate = {
         ...update,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        priority: update.priority || StateUpdatePriority.NORMAL
       };
 
       // Validate update if enabled
@@ -77,14 +127,28 @@ export class StateUpdateQueue {
         this.validateUpdate(queuedUpdate);
       }
 
-      this.queue.push(queuedUpdate);
+      // Handle critical updates immediately
+      if (queuedUpdate.priority === StateUpdatePriority.CRITICAL) {
+        await this.processCriticalUpdate(queuedUpdate);
+        return;
+      }
 
-      // Process queue if it exceeds max size
-      if (this.queue.length >= this.options.maxQueueSize) {
-        await this.processQueue();
-      } else {
-        // Schedule debounced processing
-        this.commitToStorage();
+      // Compress and batch non-critical updates
+      const compressedUpdate = this.compressStateDiff(queuedUpdate);
+      this.batchedUpdates.set(compressedUpdate.type, compressedUpdate);
+
+      // Start or reset batch window timer
+      if (this.batchTimeout) {
+        clearTimeout(this.batchTimeout);
+      }
+      
+      this.batchTimeout = setTimeout(async () => {
+        await this.processBatchedUpdates();
+      }, this.options.batchWindow);
+
+      // Process immediately if queue is full
+      if (this.batchedUpdates.size >= this.options.maxQueueSize) {
+        await this.processBatchedUpdates();
       }
     } catch (error) {
       throw new StateUpdateError(
@@ -180,10 +244,58 @@ export class StateUpdateQueue {
   /**
    * Processes updates atomically
    */
+  /**
+   * Processes a critical update immediately
+   */
+  private async processCriticalUpdate(update: QueuedStateUpdate): Promise<void> {
+    this.queue.push(update);
+    await this.processQueue();
+  }
+
+  /**
+   * Processes all batched updates
+   */
+  private async processBatchedUpdates(): Promise<void> {
+    if (this.batchedUpdates.size === 0) return;
+
+    // Convert batched updates to array and clear batch
+    const updates = Array.from(this.batchedUpdates.values());
+    this.batchedUpdates.clear();
+
+    // Add to main queue and process
+    this.queue.push(...updates);
+    await this.processQueue();
+  }
+
   private async processUpdates(updates: QueuedStateUpdate[]): Promise<void> {
+    try {
+      // Group updates by priority
+      const priorityGroups = new Map<number, QueuedStateUpdate[]>();
+      updates.forEach(update => {
+        const group = priorityGroups.get(update.priority || StateUpdatePriority.NORMAL) || [];
+        group.push(update);
+        priorityGroups.set(update.priority || StateUpdatePriority.NORMAL, group);
+      });
+
+      // Process updates in priority order
+      for (let priority = StateUpdatePriority.CRITICAL; priority <= StateUpdatePriority.LOW; priority++) {
+        const priorityUpdates = priorityGroups.get(priority) || [];
+        for (const update of priorityUpdates) {
+          await this.processUpdate(update);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing updates batch:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Processes a single update
+   */
+  private async processUpdate(update: QueuedStateUpdate): Promise<void> {
     // Implementation will be integrated with StorageManager
-    // This is a placeholder for the actual storage commit logic
-    console.log('Processing updates:', updates);
+    console.log('Processing update:', update);
   }
 
   /**

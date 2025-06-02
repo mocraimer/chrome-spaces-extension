@@ -1,11 +1,8 @@
 import { jest } from '@jest/globals';
-import type { WindowManager, TabManager, StorageManager } from '../../shared/types/Services';
-import type { Space } from '../../shared/types/Space';
+import type { MockedObject } from 'jest-mock';
+import type { WindowManager, TabManager, StateManager, StorageManager } from '@/shared/types/Services';
 
-type SpaceRecord = Record<string, Space>;
-type StorageResponse = Promise<SpaceRecord>;
-
-export function createMockWindowManager(): jest.Mocked<WindowManager> {
+export const createWindowManagerMock = (): MockedObject<WindowManager> => {
   return {
     createWindow: jest.fn(),
     closeWindow: jest.fn(),
@@ -16,13 +13,14 @@ export function createMockWindowManager(): jest.Mocked<WindowManager> {
     getCurrentWindow: jest.fn(),
     arrangeWindows: jest.fn()
   };
-}
+};
 
-export function createMockTabManager(): jest.Mocked<TabManager> {
+export const createTabManagerMock = (): MockedObject<TabManager> => {
   return {
     getTabs: jest.fn(),
-    getTabUrl: jest.fn((tab: chrome.tabs.Tab) => tab.url || ''),
+    getTabUrl: jest.fn(),
     createTab: jest.fn(),
+    createTabs: jest.fn(),
     moveTab: jest.fn(),
     removeTab: jest.fn(),
     updateTab: jest.fn(),
@@ -33,29 +31,77 @@ export function createMockTabManager(): jest.Mocked<TabManager> {
     reloadTab: jest.fn(),
     captureTab: jest.fn()
   };
-}
+};
 
-export function createMockStorageManager(): jest.Mocked<StorageManager> {
-  const emptySpaces: SpaceRecord = {};
-  
+export const createStateManagerMock = (): MockedObject<StateManager> => {
   return {
-    saveSpaces: jest.fn(async (spaces: SpaceRecord) => {}),
-    loadSpaces: jest.fn(async () => emptySpaces),
-    saveClosedSpaces: jest.fn(async (spaces: SpaceRecord) => {}),
-    loadClosedSpaces: jest.fn(async () => emptySpaces),
-    clear: jest.fn(async () => {}),
-    exportData: jest.fn(async () => JSON.stringify(emptySpaces)),
-    importData: jest.fn(async (data: string) => {})
+    initialize: jest.fn(),
+    getAllSpaces: jest.fn(),
+    getClosedSpaces: jest.fn(),
+    hasSpace: jest.fn(),
+    handleShutdown: jest.fn(),
+    synchronizeWindowsAndSpaces: jest.fn(),
+    setSpaceName: jest.fn(),
+    getSpaceName: jest.fn(),
+    createSpace: jest.fn(),
+    closeSpace: jest.fn(),
+    renameSpace: jest.fn(),
+    getSpaceById: jest.fn(),
+    updateSpaceWindow: jest.fn(),
+    restoreSpace: jest.fn(),
+    deleteClosedSpace: jest.fn()
   };
-}
+};
 
-export function createMockSpace(id: string, name: string): Space {
+export const createStorageManagerMock = (): MockedObject<StorageManager> => {
   return {
-    id,
-    name,
-    urls: [],
-    lastModified: Date.now(),
-    named: false,
-    version: 1 // Initialize version for sync tracking
+    saveSpaces: jest.fn(),
+    loadSpaces: jest.fn(),
+    saveClosedSpaces: jest.fn(),
+    loadClosedSpaces: jest.fn(),
+    clear: jest.fn(),
+    exportData: jest.fn(),
+    importData: jest.fn()
   };
-}
+};
+
+export const mockChrome = {
+  windows: {
+    create: jest.fn(),
+    remove: jest.fn(),
+    update: jest.fn(),
+    get: jest.fn(),
+    getAll: jest.fn(),
+    getCurrent: jest.fn()
+  },
+  tabs: {
+    create: jest.fn(),
+    query: jest.fn(),
+    update: jest.fn(),
+    remove: jest.fn(),
+    move: jest.fn(),
+    get: jest.fn(),
+    duplicate: jest.fn(),
+    reload: jest.fn()
+  },
+  storage: {
+    local: {
+      get: jest.fn(),
+      set: jest.fn(),
+      remove: jest.fn(),
+      clear: jest.fn()
+    }
+  },
+  runtime: {
+    sendMessage: jest.fn(),
+    onMessage: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
+    }
+  },
+  system: {
+    display: {
+      getInfo: jest.fn()
+    }
+  }
+};

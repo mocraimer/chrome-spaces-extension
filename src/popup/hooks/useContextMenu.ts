@@ -127,10 +127,10 @@ export function useContextMenu({ items, containerRef }: UseContextMenuOptions) {
   }, [items]);
 
   // Render menu
-  const ContextMenu = useCallback(() => {
-    if (!isOpen) return null;
+  const ContextMenu = React.useMemo(() => {
+    if (!isOpen) return () => null;
 
-    return React.createElement(
+    return () => React.createElement(
       'div',
       {
         id: 'context-menu',

@@ -1,4 +1,52 @@
+import React from 'react';
+import { render, RenderOptions } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
 import { jest } from '@jest/globals';
+import { settingsSlice } from '../../options/store/slices/settingsSlice';
+
+// Create a test store
+export function createTestStore(preloadedState?: any) {
+  return configureStore({
+    reducer: {
+      settings: settingsSlice.reducer,
+    },
+    preloadedState,
+  });
+}
+
+// Create wrapper component with providers
+interface AllTheProvidersProps {
+  children: React.ReactNode;
+  store?: ReturnType<typeof createTestStore>;
+}
+
+export function AllTheProviders({ children, store }: AllTheProvidersProps) {
+  const testStore = store || createTestStore();
+  
+  return React.createElement(Provider, { store: testStore, children });
+}
+
+// Custom render function
+export function renderWithProviders(
+  ui: React.ReactElement,
+  options?: Omit<RenderOptions, 'wrapper'> & {
+    preloadedState?: any;
+    store?: ReturnType<typeof createTestStore>;
+  }
+) {
+  const {
+    preloadedState,
+    store = createTestStore(preloadedState),
+    ...renderOptions
+  } = options || {};
+
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(AllTheProviders, { store, children });
+  }
+
+  return { store, ...render(ui, { wrapper: Wrapper, ...renderOptions }) };
+}
 
 export type MockEventListener = (event: string, handler: EventListener) => void;
 

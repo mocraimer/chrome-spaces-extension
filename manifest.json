@@ -31,6 +31,7 @@
     "128": "icons/icon128.png"
   },
   "options_page": "options.html",
+  "devtools_page": "devtools/devtools.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'"
   },

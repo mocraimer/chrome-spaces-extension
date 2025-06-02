@@ -2,7 +2,7 @@ import { PlaywrightTestConfig, devices } from '@playwright/test';
 import path from 'path';
 
 const config: PlaywrightTestConfig = {
-  testDir: './src/tests/e2e',
+  testDir: './e2e-tests',
   timeout: 30000,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -29,11 +29,7 @@ const config: PlaywrightTestConfig = {
       },
     },
   ],
-  webServer: {
-    command: 'npm run build',
-    port: 8080,
-    reuseExistingServer: !process.env.CI,
-  },
+  globalSetup: './e2e-tests/setup.ts',
 };
 
 export default config;

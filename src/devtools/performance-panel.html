@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Performance Metrics</title>
+  <script src="chart-loader.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 16px;
+      color: #333;
+    }
+    
+    .metrics-container {
+      display: grid;
+      grid-gap: 16px;
+    }
+    
+    .metric-card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 16px;
+    }
+    
+    .metric-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    
+    .metric-name {
+      font-weight: 600;
+    }
+    
+    .metric-duration {
+      color: #666;
+    }
+    
+    .metric-duration.slow {
+      color: #d32f2f;
+    }
+    
+    .category-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      margin-right: 8px;
+    }
+    
+    .category-badge.window {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    
+    .category-badge.state {
+      background: #e8f5e9;
+      color: #388e3c;
+    }
+    
+    .category-badge.ui {
+      background: #fff3e0;
+      color: #f57c00;
+    }
+    
+    .metric-context {
+      font-family: monospace;
+      font-size: 12px;
+      margin-top: 8px;
+      padding: 8px;
+      background: #f5f5f5;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    
+    #summary {
+      margin-bottom: 24px;
+      padding: 16px;
+      background: #fafafa;
+      border-radius: 4px;
+    }
+    
+    .chart-container {
+      height: 200px;
+      margin: 24px 0;
+    }
+
+    .actions {
+      margin-top: 16px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      background: #1976d2;
+      color: white;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #1565c0;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div id="summary">
+    <h2>Performance Summary</h2>
+    <div id="summary-stats"></div>
+    <div class="actions">
+      <button id="clearMetrics">Clear Metrics (Ctrl+K)</button>
+      <label>
+        <input type="checkbox" id="autoScroll" checked>
+        Auto-scroll new metrics
+      </label>
+    </div>
+  </div>
+  
+  <div id="charts">
+    <div class="chart-container">
+      <canvas id="categoryChart"></canvas>
+    </div>
+    <div class="chart-container">
+      <canvas id="timelineChart"></canvas>
+    </div>
+  </div>
+  
+  <div class="metrics-container" id="metrics"></div>
+
+  <div id="noData" style="display: none; text-align: center; padding: 2rem;">
+    No performance metrics collected yet. Interact with the extension to see metrics.
+  </div>
+  
+  <script src="performance-panel.js"></script>
+</body>
+</html>

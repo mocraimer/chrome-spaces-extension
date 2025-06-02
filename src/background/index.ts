@@ -7,6 +7,8 @@ import { StateUpdateQueue } from './services/StateUpdateQueue';
 import { StateBroadcastService } from './services/StateBroadcastService';
 import { Events, STARTUP_DELAY, RECOVERY_CHECK_DELAY } from '@/shared/constants';
 import { SettingsState } from '@/options/store/slices/settingsSlice';
+import { PerformanceMessageHandler } from './services/performance/PerformanceMessageHandler';
+import { PerformanceTrackingService, MetricCategories } from './services/performance/PerformanceTrackingService';
 
 class BackgroundService {
   private windowManager: WindowManager;
@@ -16,7 +18,11 @@ class BackgroundService {
   private messageHandler: MessageHandler;
 
   constructor() {
-    // Initialize services
+    // Initialize performance tracking
+    const perfService = PerformanceTrackingService.getInstance();
+    PerformanceMessageHandler.getInstance();
+
+    // Initialize services with performance tracking
     this.windowManager = new WindowManager();
     this.tabManager = new TabManager();
     this.storageManager = new StorageManager();
@@ -97,6 +103,7 @@ class BackgroundService {
     });
   }
 
+  @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   private async handleStartup(): Promise<void> {
     try {
       // Wait for Chrome to settle
@@ -130,6 +137,7 @@ class BackgroundService {
     }
   }
 
+  @PerformanceTrackingService.track(MetricCategories.WINDOW, 5000)
   private async restoreSpaces(): Promise<void> {
     try {
       const closedSpaces = await this.stateManager.getClosedSpaces();
@@ -146,6 +154,7 @@ class BackgroundService {
     }
   }
 
+  @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   private async handleInstall(details: chrome.runtime.InstalledDetails): Promise<void> {
     try {
       await this.stateManager.initialize();
@@ -159,6 +168,7 @@ class BackgroundService {
     }
   }
 
+  @PerformanceTrackingService.track(MetricCategories.WINDOW, 3000)
   private async handleSessionRestore(): Promise<void> {
     try {
       await this.stateManager.initialize();
@@ -179,6 +189,7 @@ class BackgroundService {
     }
   }
 
+  @PerformanceTrackingService.track(MetricCategories.WINDOW, 1000)
   private async ensureWindowHasSpace(windowId: number): Promise<void> {
     if (!this.stateManager.hasSpace(windowId)) {
       await this.stateManager.createSpace(windowId);

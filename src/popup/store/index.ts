@@ -23,11 +23,11 @@ export const store = configureStore({
 });
 
 // Add development debug listener
-if (process.env.NODE_ENV === 'development') {
-  store.subscribe(() => {
-    console.log('[Redux Debug] State updated:', store.getState());
-  });
-}
+// if (process.env.NODE_ENV === 'development') {
+//   store.subscribe(() => {
+//     console.log('[Redux Debug] State updated:', store.getState());
+//   });
+// }
 
 // Log initial state
 console.log('Initial store state:', store.getState());

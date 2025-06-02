@@ -1,0 +1,407 @@
+openapi: 3.0.0
+info:
+  title: Rating Data Translator API
+  description: API for translating rating data with real-time progress updates
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+paths:
+  /translations:
+    post:
+      summary: Create a new translation job
+      description: Initiates a new rating data translation job
+      operationId: createTranslationJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslationJobRequest'
+      responses:
+        '202':
+          description: Job accepted and processing started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslationJobResponse'
+        '400':
+          description: Invalid input parameters
+        '401':
+          description: Unauthorized
+    get:
+      summary: List all translation jobs
+      description: Retrieves all translation jobs for the authenticated user
+      operationId: getTranslationJobs
+      parameters:
+        - name: status
+          in: query
+          description: Filter jobs by status
+          schema:
+            type: string
+            enum: [PENDING, PROCESSING, COMPLETED, FAILED]
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of translation jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TranslationJob'
+        '401':
+          description: Unauthorized
+
+  /translations/{jobId}:
+    get:
+      summary: Get translation job details
+      description: Retrieves details for a specific translation job
+      operationId: getTranslationJob
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: The unique identifier of the translation job
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Translation job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslationJob'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Job not found
+
+  /translations/{jobId}/result:
+    get:
+      summary: Get translation job result
+      description: Retrieves the result of a completed translation job
+      operationId: getTranslationJobResult
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: The unique identifier of the translation job
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Translation job result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslationJobResult'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Job not found or result not available
+
+  /ws/translations/{jobId}:
+    get:
+      summary: WebSocket endpoint for real-time translation job updates
+      description: |
+        Provides real-time updates on translation job progress through a persistent WebSocket connection.
+        After successful connection, the server will push status updates as JSON messages.
+
+        The client should implement handlers for the following event types:
+        - CONNECTED: Initial confirmation of successful connection
+        - PROGRESS: Regular updates on job progress
+        - VALIDATION: Updates during the validation phase
+        - PROCESSING: Updates during data processing
+        - TRANSLATION: Updates during the translation phase
+        - EXPORT: Updates during the export phase
+        - COMPLETED: Notification when job is complete with result information
+        - ERROR: Detailed error information if a problem occurs
+        - HEARTBEAT: Regular ping to maintain connection
+      operationId: wsTranslationUpdates
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: The unique identifier of the translation job
+          schema:
+            type: string
+            format: uuid
+        - name: access_token
+          in: query
+          required: true
+          description: JWT token for authentication (same as used for REST API)
+          schema:
+            type: string
+      responses:
+        '101':
+          description: Switching protocols to WebSocket
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    description: Connection confirmation
+                    properties:
+                      event:
+                        type: string
+                        enum: [CONNECTED]
+                      jobId:
+                        type: string
+                        format: uuid
+                      timestamp:
+                        type: string
+                        format: date-time
+                    required:
+                      - event
+                      - jobId
+                      - timestamp
+
+                  - type: object
+                    description: Progress update
+                    properties:
+                      event:
+                        type: string
+                        enum: [PROGRESS]
+                      jobId:
+                        type: string
+                        format: uuid
+                      timestamp:
+                        type: string
+                        format: date-time
+                      data:
+                        type: object
+                        properties:
+                          stage:
+                            type: string
+                            enum: [VALIDATION, PROCESSING, TRANSLATION, EXPORT, FINALIZATION]
+                          progress:
+                            type: integer
+                            minimum: 0
+                            maximum: 100
+                          message:
+                            type: string
+                        required:
+                          - stage
+                          - progress
+                    required:
+                      - event
+                      - jobId
+                      - timestamp
+                      - data
+
+                  - type: object
+                    description: Completion notification
+                    properties:
+                      event:
+                        type: string
+                        enum: [COMPLETED]
+                      jobId:
+                        type: string
+                        format: uuid
+                      timestamp:
+                        type: string
+                        format: date-time
+                      data:
+                        type: object
+                        properties:
+                          resultUrl:
+                            type: string
+                            format: uri
+                            description: URL to fetch complete results
+                        required:
+                          - resultUrl
+                    required:
+                      - event
+                      - jobId
+                      - timestamp
+                      - data
+
+                  - type: object
+                    description: Error notification
+                    properties:
+                      event:
+                        type: string
+                        enum: [ERROR]
+                      jobId:
+                        type: string
+                        format: uuid
+                      timestamp:
+                        type: string
+                        format: date-time
+                      data:
+                        type: object
+                        properties:
+                          code:
+                            type: string
+                          message:
+                            type: string
+                          details:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - code
+                          - message
+                    required:
+                      - event
+                      - jobId
+                      - timestamp
+                      - data
+
+                  - type: object
+                    description: Heartbeat to maintain connection
+                    properties:
+                      event:
+                        type: string
+                        enum: [HEARTBEAT]
+                      timestamp:
+                        type: string
+                        format: date-time
+                    required:
+                      - event
+                      - timestamp
+        '400':
+          description: Invalid request parameters
+        '401':
+          description: Unauthorized - invalid or missing access token
+        '404':
+          description: Job not found
+
+components:
+  schemas:
+    TranslationJobRequest:
+      type: object
+      properties:
+        sourceFormat:
+          type: string
+          enum: [EXCEL, CSV, JSON]
+        configurationData:
+          type: object
+        callbackUrl:
+          type: string
+          format: uri
+          description: Optional URL to notify when job is complete
+      required:
+        - sourceFormat
+
+    TranslationJobResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, PROCESSING]
+        createdAt:
+          type: string
+          format: date-time
+        links:
+          type: object
+          properties:
+            status:
+              type: string
+              format: uri
+            websocket:
+              type: string
+              description: WebSocket URL for real-time updates
+      required:
+        - jobId
+        - status
+        - createdAt
+        - links
+
+    TranslationJob:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        currentStage:
+          type: string
+          enum: [VALIDATION, PROCESSING, TRANSLATION, EXPORT, FINALIZATION]
+        error:
+          type: string
+        links:
+          type: object
+          properties:
+            result:
+              type: string
+              format: uri
+            websocket:
+              type: string
+              description: WebSocket URL for real-time updates
+      required:
+        - jobId
+        - status
+        - createdAt
+        - updatedAt
+
+    TranslationJobResult:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [COMPLETED, FAILED]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        resultFileUrl:
+          type: string
+          format: uri
+        details:
+          type: object
+          properties:
+            recordsProcessed:
+              type: integer
+            warnings:
+              type: array
+              items:
+                type: string
+      required:
+        - jobId
+        - status
+        - createdAt
+        - completedAt
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []

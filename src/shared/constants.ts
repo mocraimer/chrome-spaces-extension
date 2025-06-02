@@ -24,6 +24,7 @@ export const TAB_LOAD_TIMEOUT = 30000;      // 30 seconds timeout for tab loadin
 // Message Types
 export const MessageTypes = {
   SPACES_UPDATED: 'spaces-updated',
+  SPACE_UPDATED: 'space-updated',
   STATE_CHANGED: 'state-changed',
   ERROR_OCCURRED: 'error-occurred',
   SETTINGS_CHANGED: 'settings-changed',

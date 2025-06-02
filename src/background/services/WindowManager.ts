@@ -1,39 +1,76 @@
 import { WindowManager as IWindowManager } from '@/shared/types/Services';
 import { executeChromeApi } from '@/shared/utils';
-import { ErrorMessages } from '@/shared/constants';
+import { PerformanceTrackingService, MetricCategories } from './performance/PerformanceTrackingService';
 
 export class WindowManager implements IWindowManager {
   /**
    * Create a new window with the given URLs
    */
-  async createWindow(urls: string[]): Promise<chrome.windows.Window> {
+  @PerformanceTrackingService.track(MetricCategories.WINDOW, 2000)
+  async createWindow(urls: string[], options: chrome.windows.CreateData = {}): Promise<chrome.windows.Window> {
     if (!urls.length) {
       throw new Error('Cannot create window with no URLs');
     }
 
     return executeChromeApi(
       async () => {
-        // Create window with first URL
-        const window = await chrome.windows.create({ 
-          url: urls[0],
-          focused: true 
-        });
+        let createdWindow: chrome.windows.Window | undefined;
+        
+        try {
+          // Create window with first URL and specified options
+          createdWindow = await chrome.windows.create({
+            ...options,
+            url: urls[0],
+            focused: options.focused ?? true
+          });
 
-        // Add remaining URLs as tabs
-        if (urls.length > 1) {
-          await Promise.all(
-            urls.slice(1).map(url =>
-              chrome.tabs.create({
-                windowId: window.id,
-                url,
-                active: false
-              })
-            )
-          );
+          if (!createdWindow.id) {
+            throw new Error('Failed to create window: no window ID returned');
+          }
+
+          // Add remaining URLs as tabs in batches to prevent overwhelming the browser
+          if (urls.length > 1) {
+            const batchSize = 5;
+            for (let i = 1; i < urls.length; i += batchSize) {
+              const batch = urls.slice(i, i + batchSize);
+              const windowId = createdWindow?.id;
+              
+              if (!windowId) {
+                throw new Error('Window reference lost during tab creation');
+              }
+              
+              await Promise.all(
+                batch.map(url =>
+                  chrome.tabs.create({
+                    windowId,
+                    url,
+                    active: false
+                  })
+                )
+              );
+              // Small delay between batches
+              if (i + batchSize < urls.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+            }
+          }
+
+          // Get updated window state with all tabs
+          if (!createdWindow || !createdWindow.id) {
+            throw new Error('Window reference lost after tab creation');
+          }
+          return await this.getWindow(createdWindow.id);
+        } catch (error) {
+          // If window was created but tab creation failed, attempt cleanup
+          if (createdWindow?.id) {
+            try {
+              await this.closeWindow(createdWindow.id);
+            } catch (cleanupError) {
+              console.error('Failed to cleanup window after tab creation error:', cleanupError);
+            }
+          }
+          throw error;
         }
-
-        // Return updated window with all tabs
-        return this.getWindow(window.id!);
       },
       'WINDOW_ERROR'
     );
@@ -42,6 +79,7 @@ export class WindowManager implements IWindowManager {
   /**
    * Close a window by ID
    */
+  @PerformanceTrackingService.track(MetricCategories.WINDOW, 500)
   async closeWindow(windowId: number): Promise<void> {
     await executeChromeApi(
       () => chrome.windows.remove(windowId),
@@ -52,6 +90,7 @@ export class WindowManager implements IWindowManager {
   /**
    * Switch focus to a specific window
    */
+  @PerformanceTrackingService.track(MetricCategories.WINDOW, 300)
   async switchToWindow(windowId: number): Promise<void> {
     await executeChromeApi(
       () => chrome.windows.update(windowId, { 
@@ -66,10 +105,14 @@ export class WindowManager implements IWindowManager {
    * Get a window by ID with populated tabs
    */
   async getWindow(windowId: number): Promise<chrome.windows.Window> {
-    return executeChromeApi(
-      () => chrome.windows.get(windowId, { populate: true }),
-      'WINDOW_ERROR'
-    );
+    try {
+      return await executeChromeApi(
+        () => chrome.windows.get(windowId, { populate: true }),
+        'WINDOW_ERROR'
+      );
+    } catch (error) {
+      throw new Error(`Failed to get window ${windowId}: ${(error as Error).message}`);
+    }
   }
 
   /**
@@ -107,6 +150,7 @@ export class WindowManager implements IWindowManager {
   /**
    * Arrange windows in a grid layout
    */
+  @PerformanceTrackingService.track(MetricCategories.WINDOW, 1000)
   async arrangeWindows(): Promise<void> {
     const windows = await this.getAllWindows();
     const displays = await chrome.system.display.getInfo();
@@ -123,7 +167,11 @@ export class WindowManager implements IWindowManager {
         const row = Math.floor(i / cols);
         const col = i % cols;
         
-        return chrome.windows.update(window.id!, {
+        const windowId = window.id;
+        if (!windowId) {
+          throw new Error(`Window ${i} has no ID`);
+        }
+        return chrome.windows.update(windowId, {
           left: workArea.left + (col * width),
           top: workArea.top + (row * height),
           width,
