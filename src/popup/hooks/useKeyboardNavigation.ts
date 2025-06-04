@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/storeHooks';
 import { Space } from '@/shared/types/Space';
 import { searchSpaces } from '../utils/search';
+import { selectSpace, switchToSpace, restoreSpace } from '../store/slices/spacesSlice';
 
 interface KeyboardNavigationOptions {
   spaces: Record<string, Space>;
@@ -15,6 +16,7 @@ interface KeyboardNavigationOptions {
 export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: KeyboardNavigationOptions) => {
   const dispatch = useAppDispatch();
   const selectedSpaceId = useAppSelector(state => state.spaces.selectedSpaceId);
+  const editMode = useAppSelector(state => state.spaces.editMode);
   const [searchFocused, setSearchFocused] = useState(false);
   const initialized = useRef(false);
 
@@ -25,7 +27,7 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
       // First time initialization
       initialized.current = true;
       if (!selectedSpaceId) {
-        dispatch({ type: 'spaces/selectSpace', payload: ids[0] });
+        dispatch(selectSpace(ids[0]));
       }
     }
   }, [spaces, dispatch, selectedSpaceId]);
@@ -34,6 +36,14 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
   useEffect(() => {
     initialized.current = false;
   }, [spaces]);
+
+  // Filter spaces based on search query - moved outside event handler
+  const allSpaces = useMemo(() => {
+    const combined = [...Object.values(spaces), ...Object.values(closedSpaces)];
+    return searchQuery
+      ? searchSpaces(combined, searchQuery)
+      : combined;
+  }, [spaces, closedSpaces, searchQuery]);
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -48,25 +58,17 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
         return;
       }
 
-      // Filter spaces based on search query
-      const allSpaces = useMemo(() => {
-        const combined = [...Object.values(spaces), ...Object.values(closedSpaces)];
-        return searchQuery
-          ? searchSpaces(combined, searchQuery)
-          : combined;
-      }, [spaces, closedSpaces, searchQuery]);
-
       if (allSpaces.length === 0) {
         // Clear selection if no spaces match search
         if (selectedSpaceId) {
-          dispatch({ type: 'spaces/selectSpace', payload: '' });
+          dispatch(selectSpace(''));
         }
         return;
       }
 
       // If current selection is not in filtered results, select first result
       if (selectedSpaceId && !allSpaces.some(space => space.id === selectedSpaceId)) {
-        dispatch({ type: 'spaces/selectSpace', payload: allSpaces[0].id });
+        dispatch(selectSpace(allSpaces[0].id));
       }
 
       // Index of currently selected space
@@ -80,7 +82,7 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
           {
             // Select next space, wrapping to first if at end
             const nextIdx = currentIdx < allSpaces.length - 1 ? currentIdx + 1 : 0;
-            dispatch({ type: 'spaces/selectSpace', payload: allSpaces[nextIdx].id });
+            dispatch(selectSpace(allSpaces[nextIdx].id));
           }
           break;
         case 'ArrowUp':
@@ -88,20 +90,24 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
           {
             // Select previous space, wrapping to last if at beginning
             const prevIdx = currentIdx > 0 ? currentIdx - 1 : allSpaces.length - 1;
-            dispatch({ type: 'spaces/selectSpace', payload: allSpaces[prevIdx].id });
+            dispatch(selectSpace(allSpaces[prevIdx].id));
           }
           break;
         case 'Enter':
+          // Don't switch spaces if in edit mode - let the input handle Enter
+          if (editMode) {
+            return;
+          }
           // Activate selected space
           if (selectedSpaceId) {
             const selectedSpace = spaces[selectedSpaceId] || closedSpaces[selectedSpaceId];
             if (selectedSpace) {
               if (spaces[selectedSpaceId]) {
-                // For open spaces, use them directly
-                dispatch({ type: 'spaces/useSpace', payload: selectedSpaceId } as any);
+                // For open spaces, switch to them
+                dispatch(switchToSpace(Number(selectedSpaceId)));
               } else {
-                // For closed spaces, restore and use them
-                dispatch({ type: 'spaces/restoreSpace', payload: selectedSpaceId } as any);
+                // For closed spaces, restore them
+                dispatch(restoreSpace(selectedSpaceId));
               }
               
               // Close popup after activation with a little delay
@@ -111,7 +117,7 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
           break;
         case 'Escape':
           // Clear selection
-          dispatch({ type: 'spaces/selectSpace', payload: '' });
+          dispatch(selectSpace(''));
           break;
         case '/':
           // Focus search
@@ -129,7 +135,7 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [spaces, closedSpaces, selectedSpaceId, dispatch]);
+  }, [allSpaces, spaces, closedSpaces, selectedSpaceId, dispatch, editMode]);
 
   return {
     searchFocused

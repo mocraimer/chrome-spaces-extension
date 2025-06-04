@@ -12,7 +12,7 @@ const config: import('webpack').Configuration = {
     background: path.join(__dirname, '/src/background/index.ts'),
   },
   output: {
-    path: path.join(__dirname, 'dist'),
+    path: path.join(__dirname, 'build'),
     filename: '[name].js',
     clean: true, // Clean the output directory before emit
   },

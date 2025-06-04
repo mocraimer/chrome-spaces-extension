@@ -1,7 +1,23 @@
 import React from 'react';
 import { renderHook, act } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import configureStore from 'redux-mock-store';
 import { useKeyboardNavigation } from '../../../popup/hooks/useKeyboardNavigation';
 import { createMockKeyboardEvent } from '../../utils/testUtils';
+import { selectSpace, switchToSpace, restoreSpace } from '../../../popup/store/slices/spacesSlice';
+
+const mockStore = configureStore([]);
+
+// Mock the action creators
+jest.mock('../../../popup/store/slices/spacesSlice', () => ({
+  selectSpace: jest.fn((payload) => ({ type: 'spaces/selectSpace', payload })),
+  switchToSpace: jest.fn((payload) => ({ type: 'spaces/switchToSpace', payload })),
+  restoreSpace: jest.fn((payload) => ({ type: 'spaces/restoreSpace', payload }))
+}));
+
+// Mock window.close
+const mockWindowClose = jest.fn();
+global.window.close = mockWindowClose;
 
 describe('useKeyboardNavigation Hook', () => {
   const mockSpaces = {
@@ -14,9 +30,8 @@ describe('useKeyboardNavigation Hook', () => {
     '4': { id: '4', name: 'Closed Space 1', urls: [], lastModified: Date.now(), named: false, version: 1 }
   };
 
-  let mockState: any;
+  let store: any;
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null;
-  const { mockDispatch } = global as any;
 
   const simulateKeyPress = (key: string) => {
     if (keydownHandler) {
@@ -27,6 +42,7 @@ describe('useKeyboardNavigation Hook', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     keydownHandler = null;
+    mockWindowClose.mockClear();
 
     // Setup document event listeners
     document.addEventListener = jest.fn((event: string, handler: EventListener) => {
@@ -36,25 +52,24 @@ describe('useKeyboardNavigation Hook', () => {
     });
     document.removeEventListener = jest.fn();
     
-    mockDispatch.mockClear();
-    mockState = {
+    // Create mock store
+    store = mockStore({
       spaces: {
         selectedSpaceId: null,
         spaces: mockSpaces,
-        closedSpaces: mockClosedSpaces
+        closedSpaces: mockClosedSpaces,
+        editMode: false,
+        isLoading: false,
+        error: null,
+        currentWindowId: null,
+        searchQuery: ''
       }
-    };
-
-    // Create a selector that will always use the latest state
-    const selectorMock = jest.fn((selector) => selector(mockState));
+    });
     
-    // Reset and mock Redux store with state updates
-    jest.resetModules();
-    jest.mock('../../../popup/store', () => ({
-      __esModule: true,
-      useAppDispatch: () => mockDispatch,
-      useAppSelector: (selector: any) => selectorMock(selector)
-    }));
+    // Clear mock calls
+    (selectSpace as jest.Mock).mockClear();
+    (switchToSpace as jest.Mock).mockClear();
+    (restoreSpace as jest.Mock).mockClear();
   });
 
   afterEach(() => {
@@ -63,53 +78,75 @@ describe('useKeyboardNavigation Hook', () => {
     jest.useRealTimers();
   });
 
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <Provider store={store}>{children}</Provider>
+  );
+
   it('should navigate through spaces with arrow keys', () => {
     // Start with initial state set
-    mockState.spaces.selectedSpaceId = '1';
+    store = mockStore({
+      spaces: {
+        ...store.getState().spaces,
+        selectedSpaceId: '1'
+      }
+    });
     
     renderHook(() => useKeyboardNavigation({ 
       spaces: mockSpaces,
       closedSpaces: mockClosedSpaces,
       searchQuery: ''
-    }));
+    }), { wrapper });
 
-    mockDispatch.mockClear();
+    store.clearActions();
 
     // Navigate to next space
     act(() => {
       simulateKeyPress('ArrowDown');
     });
 
-    expect(mockDispatch).toHaveBeenCalledTimes(1);
-    expect(mockDispatch).toHaveBeenCalledWith({
+    const actions = store.getActions();
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toEqual({
       type: 'spaces/selectSpace',
       payload: '2'
     });
 
-    // Update mock state to reflect the change
-    mockState.spaces.selectedSpaceId = '2';
-    mockDispatch.mockClear();
+    // Update store for next test
+    store = mockStore({
+      spaces: {
+        ...store.getState().spaces,
+        selectedSpaceId: '2'
+      }
+    });
+    store.clearActions();
 
     // Navigate back
     act(() => {
       simulateKeyPress('ArrowUp');
     });
 
-    expect(mockDispatch).toHaveBeenCalledTimes(1);
-    expect(mockDispatch).toHaveBeenCalledWith({
+    const actions2 = store.getActions();
+    expect(actions2).toHaveLength(1);
+    expect(actions2[0]).toEqual({
       type: 'spaces/selectSpace',
       payload: '1'
     });
   });
 
   it('should handle search filtering', () => {
-    mockState.spaces.selectedSpaceId = '1';
+    store = mockStore({
+      spaces: {
+        ...store.getState().spaces,
+        selectedSpaceId: '1'
+      }
+    });
     
     const { rerender } = renderHook(({ searchQuery }) => useKeyboardNavigation({ 
       spaces: mockSpaces,
       closedSpaces: mockClosedSpaces,
       searchQuery
     }), {
+      wrapper,
       initialProps: { searchQuery: '' }
     });
 
@@ -117,37 +154,56 @@ describe('useKeyboardNavigation Hook', () => {
     rerender({ searchQuery: 'Space 2' });
 
     // Selected space should update to match search
-    expect(mockDispatch).toHaveBeenCalledWith({
+    const actions = store.getActions();
+    const selectActions = actions.filter((a: any) => a.type === 'spaces/selectSpace');
+    expect(selectActions).toContainEqual({
       type: 'spaces/selectSpace',
       payload: '2'
     });
 
     // Navigate within filtered results
-    mockDispatch.mockClear();
+    store.clearActions();
     act(() => {
       simulateKeyPress('ArrowDown');
     });
 
-    // Should not change selection as only one result matches
-    expect(mockDispatch).not.toHaveBeenCalled();
+    // Should wrap around to the same space (only one result)
+    const actions2 = store.getActions();
+    expect(actions2).toHaveLength(1);
+    expect(actions2[0]).toEqual({
+      type: 'spaces/selectSpace',
+      payload: '2'
+    });
   });
 
   it('should clear selection when no search results', () => {
-    mockState.spaces.selectedSpaceId = '1';
+    store = mockStore({
+      spaces: {
+        ...store.getState().spaces,
+        selectedSpaceId: '1'
+      }
+    });
     
     const { rerender } = renderHook(({ searchQuery }) => useKeyboardNavigation({ 
       spaces: mockSpaces,
       closedSpaces: mockClosedSpaces,
       searchQuery
     }), {
+      wrapper,
       initialProps: { searchQuery: '' }
     });
 
     // Apply search with no matches
     rerender({ searchQuery: 'no matches' });
 
-    // Should clear selection
-    expect(mockDispatch).toHaveBeenCalledWith({
+    // Trigger keyboard event to check selection clearing
+    act(() => {
+      simulateKeyPress('ArrowDown');
+    });
+
+    // Should have cleared selection due to no results
+    const actions = store.getActions();
+    expect(actions).toContainEqual({
       type: 'spaces/selectSpace',
       payload: ''
     });
@@ -165,7 +221,7 @@ describe('useKeyboardNavigation Hook', () => {
         spaces: mockSpaces,
         closedSpaces: mockClosedSpaces,
         searchQuery: ''
-      }));
+      }), { wrapper });
 
       // Focus search
       act(() => {
@@ -174,11 +230,13 @@ describe('useKeyboardNavigation Hook', () => {
 
       expect(document.activeElement).toBe(mockSearchInput);
 
-      // Blur search
+      // Mock that input is focused and press Escape
+      mockSearchInput.focus();
       act(() => {
         simulateKeyPress('Escape');
       });
 
+      // Should blur the input
       expect(document.activeElement).not.toBe(mockSearchInput);
     } finally {
       document.body.removeChild(div);
@@ -187,23 +245,92 @@ describe('useKeyboardNavigation Hook', () => {
 
   it('should clear selection on Escape', () => {
     // Initialize with selection
-    mockState.spaces.selectedSpaceId = '1';
+    store = mockStore({
+      spaces: {
+        ...store.getState().spaces,
+        selectedSpaceId: '1'
+      }
+    });
+    
     renderHook(() => useKeyboardNavigation({
       spaces: mockSpaces,
       closedSpaces: mockClosedSpaces,
       searchQuery: ''
-    }));
+    }), { wrapper });
 
-    mockDispatch.mockClear();
+    store.clearActions();
 
     // Clear selection
     act(() => {
       simulateKeyPress('Escape');
     });
 
-    expect(mockDispatch).toHaveBeenCalledWith({
+    const actions = store.getActions();
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toEqual({
       type: 'spaces/selectSpace',
       payload: ''
     });
+  });
+
+  it('should handle Enter key to switch/restore spaces', () => {
+    // Test switching to an active space
+    store = mockStore({
+      spaces: {
+        ...store.getState().spaces,
+        selectedSpaceId: '1'
+      }
+    });
+    
+    renderHook(() => useKeyboardNavigation({
+      spaces: mockSpaces,
+      closedSpaces: mockClosedSpaces,
+      searchQuery: ''
+    }), { wrapper });
+
+    store.clearActions();
+
+    // Press Enter to switch to selected space
+    act(() => {
+      simulateKeyPress('Enter');
+    });
+
+    expect(switchToSpace).toHaveBeenCalledWith(1);
+    
+    // Wait for window.close
+    act(() => {
+      jest.advanceTimersByTime(50);
+    });
+    
+    expect(mockWindowClose).toHaveBeenCalled();
+
+    // Test restoring a closed space
+    store = mockStore({
+      spaces: {
+        ...store.getState().spaces,
+        selectedSpaceId: '4' // Closed space
+      }
+    });
+    
+    (restoreSpace as jest.Mock).mockClear();
+    mockWindowClose.mockClear();
+
+    renderHook(() => useKeyboardNavigation({
+      spaces: mockSpaces,
+      closedSpaces: mockClosedSpaces,
+      searchQuery: ''
+    }), { wrapper });
+
+    act(() => {
+      simulateKeyPress('Enter');
+    });
+
+    expect(restoreSpace).toHaveBeenCalledWith('4');
+    
+    act(() => {
+      jest.advanceTimersByTime(50);
+    });
+    
+    expect(mockWindowClose).toHaveBeenCalled();
   });
 });

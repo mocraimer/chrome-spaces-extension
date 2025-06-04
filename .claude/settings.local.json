@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run lint)",
+      "Bash(grep:*)",
+      "Bash(npm run test:*)",
+      "Bash(npx tsc:*)",
+      "Bash(./scripts/test-space-names.sh:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(sed:*)",
+      "Bash(timeout 60 npm run test:bdd:smoke)",
+      "Bash(npx playwright:*)"
+    ],
+    "deny": []
+  }
+}
