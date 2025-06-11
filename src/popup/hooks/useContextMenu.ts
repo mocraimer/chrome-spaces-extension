@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, RefObject } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 
 interface ContextMenuItem {
   id: string;
@@ -14,14 +14,17 @@ interface Position {
 }
 
 interface UseContextMenuOptions {
-  items: ContextMenuItem[];
-  containerRef?: RefObject<HTMLElement>;
+  items: ContextMenuItem[] | (() => ContextMenuItem[]);
 }
 
-export function useContextMenu({ items, containerRef }: UseContextMenuOptions) {
+export function useContextMenu({ items: itemsOrThunk }: UseContextMenuOptions) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<Position>({ x: 0, y: 0 });
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+
+  const getItems = (): ContextMenuItem[] => {
+    return typeof itemsOrThunk === 'function' ? itemsOrThunk() : itemsOrThunk;
+  };
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -57,6 +60,9 @@ export function useContextMenu({ items, containerRef }: UseContextMenuOptions) {
     if (!isOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      const items = getItems();
+      if (items.length === 0) return;
+
       switch (event.key) {
         case 'ArrowDown':
         case 'j':
@@ -95,11 +101,14 @@ export function useContextMenu({ items, containerRef }: UseContextMenuOptions) {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, items, selectedItemId]);
+  }, [isOpen, itemsOrThunk, selectedItemId]);
 
   // Show menu
   const show = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
+
+    const items = getItems();
+    if (items.length === 0) return;
 
     // Calculate position
     let x = event.clientX;
@@ -124,11 +133,14 @@ export function useContextMenu({ items, containerRef }: UseContextMenuOptions) {
     setPosition({ x, y });
     setIsOpen(true);
     setSelectedItemId(items[0]?.id || null);
-  }, [items]);
+  }, [itemsOrThunk]);
 
   // Render menu
   const ContextMenu = React.useMemo(() => {
     if (!isOpen) return () => null;
+    
+    const items = getItems();
+    if (items.length === 0) return () => null;
 
     return () => React.createElement(
       'div',
@@ -171,7 +183,7 @@ export function useContextMenu({ items, containerRef }: UseContextMenuOptions) {
         )
       )
     );
-  }, [isOpen, position.x, position.y, items, selectedItemId]);
+  }, [isOpen, position.x, position.y, itemsOrThunk, selectedItemId]);
 
   return {
     show,

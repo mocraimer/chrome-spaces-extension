@@ -364,7 +364,9 @@ export class StateManager implements IStateManager {
 
       this.broadcastService.broadcast(update);
     } catch (error) {
-      throw new Error(`Failed to set space name: ${(error as Error).message}`);
+      const newError = new Error(`Failed to set space name: ${(error as Error).message}`);
+      (newError as any).cause = error;
+      throw newError;
     } finally {
       this.releaseLock(spaceId);
     }

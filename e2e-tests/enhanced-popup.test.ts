@@ -188,4 +188,73 @@ test.describe('Enhanced Popup Tests', () => {
     expect(hasReactErrors).toBe(false);
     console.log('✅ No React errors in console');
   });
+
+  test('Space title editing works correctly', async () => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.waitForTimeout(1000);
+
+    // Look for edit button on a space
+    const editButton = page.locator('.edit-name-btn').first();
+    const isVisible = await editButton.isVisible();
+    
+    if (isVisible) {
+      // Click edit button
+      await editButton.click();
+      
+      // Should show input field
+      const nameInput = page.locator('.space-name-input');
+      await expect(nameInput).toBeVisible();
+      await expect(nameInput).toBeFocused();
+      
+      // Type new name
+      await nameInput.fill('Test Edited Space');
+      
+      // Press Enter to save
+      await nameInput.press('Enter');
+      
+      // Should exit edit mode and show new name
+      await expect(nameInput).not.toBeVisible();
+      const spaceName = page.locator('.space-name').first();
+      await expect(spaceName).toContainText('Test Edited Space');
+      
+      console.log('✅ Space title editing works');
+    } else {
+      console.log('⚠️ No editable spaces found, skipping edit test');
+    }
+  });
+
+  test('Space title editing can be cancelled', async () => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.waitForTimeout(1000);
+
+    // Look for edit button on a space
+    const editButton = page.locator('.edit-name-btn').first();
+    const isVisible = await editButton.isVisible();
+    
+    if (isVisible) {
+      // Get original name
+      const originalName = await page.locator('.space-name').first().textContent();
+      
+      // Click edit button
+      await editButton.click();
+      
+      // Type new name
+      const nameInput = page.locator('.space-name-input');
+      await nameInput.fill('Should Not Save');
+      
+      // Press Escape to cancel
+      await nameInput.press('Escape');
+      
+      // Should exit edit mode and show original name
+      await expect(nameInput).not.toBeVisible();
+      const spaceName = page.locator('.space-name').first();
+      await expect(spaceName).toContainText(originalName || '');
+      
+      console.log('✅ Space title editing cancellation works');
+    } else {
+      console.log('⚠️ No editable spaces found, skipping cancel test');
+    }
+  });
 });

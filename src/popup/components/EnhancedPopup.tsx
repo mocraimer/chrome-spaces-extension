@@ -127,7 +127,17 @@ const EnhancedPopup: React.FC = () => {
         }
       };
       
-      await chrome.storage.local.set({ spaceCustomNames: updatedNames });
+      // Use a single atomic storage operation to prevent race conditions
+      await chrome.storage.local.set({ 
+        spaceCustomNames: updatedNames,
+        // Add a version/timestamp to track the latest update
+        lastSpaceNameUpdate: {
+          permanentId,
+          timestamp: Date.now(),
+          name: customName.trim()
+        }
+      });
+      
       setCustomNames(updatedNames);
       
       // Update existing names set for duplicate checking
@@ -135,30 +145,12 @@ const EnhancedPopup: React.FC = () => {
       Object.values(updatedNames).forEach(entry => allNames.add(entry.customName.toLowerCase()));
       setExistingNames(allNames);
       
+      // Note: Custom names are persisted in local storage
+      // and will be loaded when popup reopens
+      
       return true;
     } catch (err) {
       console.error('Failed to save custom name:', err);
-      return false;
-    }
-  }, [loadCustomNames]);
-
-  const deleteCustomName = useCallback(async (permanentId: string) => {
-    try {
-      const currentNames = await loadCustomNames();
-      const updatedNames = { ...currentNames };
-      delete updatedNames[permanentId];
-      
-      await chrome.storage.local.set({ spaceCustomNames: updatedNames });
-      setCustomNames(updatedNames);
-      
-      // Update existing names set
-      const allNames = new Set<string>();
-      Object.values(updatedNames).forEach(entry => allNames.add(entry.customName.toLowerCase()));
-      setExistingNames(allNames);
-      
-      return true;
-    } catch (err) {
-      console.error('Failed to delete custom name:', err);
       return false;
     }
   }, [loadCustomNames]);
@@ -479,33 +471,48 @@ const EnhancedPopup: React.FC = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingSpaceId || !editingName.trim()) return;
+    if (!editingSpaceId) return;
+    
+    // Get the current value from the input field directly (more reliable than state)
+    const currentInputValue = editInputRef.current?.value?.trim() || '';
+    if (!currentInputValue) return;
+    
+    // Prevent duplicate saves
+    if (editInputRef.current?.dataset.saving === 'true') return;
     
     // Find the space being edited
     const space = [...spaces, ...closedSpaces].find(s => s.id === editingSpaceId);
     if (!space) return;
     
-    // Validate the new name
-    const validation = validateSpaceName(editingName, space.permanentId);
+
+    
+    // Validate the new name (use input value, not state)
+    const validation = validateSpaceName(currentInputValue, space.permanentId);
     if (!validation.valid) {
       setError(validation.error || 'Invalid name');
       return;
     }
     
-    // Save the custom name
-    const success = await saveCustomName(space.permanentId, editingName, space.name);
+    // Mark as saving to prevent duplicate calls
+    if (editInputRef.current) {
+      editInputRef.current.dataset.saving = 'true';
+    }
+    
+    // Save the custom name (use input value, not state)
+    const success = await saveCustomName(space.permanentId, currentInputValue, space.name);
     if (success) {
-      // Update local state
-      if ('windowId' in space && space.windowId) {
+      // Update local state immediately (optimistic update)
+      const trimmedName = currentInputValue;
+      if ('isActive' in space && space.isActive) {
         setSpaces(prev => prev.map(s => 
           s.id === editingSpaceId 
-            ? { ...s, customName: editingName.trim() }
+            ? { ...s, customName: trimmedName }
             : s
         ));
       } else {
         setClosedSpaces(prev => prev.map(s => 
           s.id === editingSpaceId 
-            ? { ...s, customName: editingName.trim() }
+            ? { ...s, customName: trimmedName }
             : s
         ));
       }
@@ -515,6 +522,11 @@ const EnhancedPopup: React.FC = () => {
       setError(null);
     } else {
       setError('Failed to save space name');
+    }
+    
+    // Clear saving flag
+    if (editInputRef.current) {
+      editInputRef.current.dataset.saving = 'false';
     }
   };
 
@@ -528,10 +540,12 @@ const EnhancedPopup: React.FC = () => {
     switch (e.key) {
       case 'Enter':
         e.preventDefault();
+        e.stopPropagation(); // Prevent event bubbling
         handleSaveEdit();
         break;
       case 'Escape':
         e.preventDefault();
+        e.stopPropagation(); // Prevent event bubbling
         handleCancelEdit();
         break;
         case 'z':
@@ -631,16 +645,25 @@ const EnhancedPopup: React.FC = () => {
                       value={editingName}
                       onChange={(e) => setEditingName(e.target.value)}
                       onKeyDown={handleEditKeyDown}
-                      onBlur={handleSaveEdit}
+                      onBlur={(e) => {
+                        // Only save on blur if not caused by Enter key or Escape key
+                        // This prevents double saves and race conditions
+                        const relatedTarget = e.relatedTarget as HTMLElement;
+                        const isClickingAway = !relatedTarget || !relatedTarget.closest('.space-item');
+                        
+                        if (isClickingAway && editInputRef.current?.dataset.saving !== 'true') {
+                          handleSaveEdit();
+                        }
+                      }}
                       className="edit-input"
                       maxLength={MAX_NAME_LENGTH}
                       placeholder="Enter space name..."
+                      data-saving="false"
                     />
                   ) : (
                     <h3 
-                      onDoubleClick={() => startEditing(space as Space & ClosedSpace)}
                       className={space.customName ? 'custom-name' : 'auto-name'}
-                      title={space.customName ? 'Custom name - double click to edit' : 'Auto-generated name - double click to edit'}
+                      title={space.customName ? 'Custom name - press F2 to edit' : 'Auto-generated name - press F2 to edit'}
                     >
                       {space.customName && <span className="custom-indicator">✏️ </span>}
                       {displayName}
@@ -746,7 +769,7 @@ const EnhancedPopup: React.FC = () => {
       {/* Help text */}
       <div className="help-text">
         <small>
-          ↑↓ navigate • Enter switch • F2/double-click edit • Ctrl+Z reset • Del remove
+          ↑↓ navigate • Enter switch • F2 edit • Ctrl+Z reset • Del remove
         </small>
       </div>
     </div>

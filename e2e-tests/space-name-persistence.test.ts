@@ -1,10 +1,8 @@
 import { test, expect, chromium, BrowserContext, Page } from '@playwright/test';
-import { ExtensionHelpers } from './helpers';
 
 test.describe('Space Name Persistence E2E Tests', () => {
   let context: BrowserContext;
   let extensionId: string;
-  let helpers: ExtensionHelpers;
 
   test.beforeEach(async () => {
     // Launch browser with extension
@@ -18,25 +16,28 @@ test.describe('Space Name Persistence E2E Tests', () => {
       ]
     });
 
-    // Get extension ID
-    const background = context.backgroundPages()[0];
-    if (!background) {
-      await context.waitForEvent('backgroundpage');
+    // Get extension ID from service worker (Manifest V3)
+    let serviceWorker = context.serviceWorkers()[0];
+    if (!serviceWorker) {
+      serviceWorker = await context.waitForEvent('serviceworker');
     }
     
-    extensionId = background?.url().split('/')[2] || '';
-    if (!extensionId) {
-      // Fallback to service worker approach
-      const serviceWorker = context.serviceWorkers()[0];
-      extensionId = serviceWorker?.url().split('/')[2] || '';
-    }
-
-    helpers = new ExtensionHelpers(context, extensionId);
+    extensionId = serviceWorker.url().split('/')[2];
+    console.log('Extension ID:', extensionId);
   });
 
   test.afterEach(async () => {
     await context.close();
   });
+
+  // Helper function to open extension popup
+  async function openExtensionPopup(): Promise<Page> {
+    // Create a new page and navigate directly to the extension popup
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.waitForTimeout(1000); // Wait for extension to initialize
+    return page;
+  }
 
   test('should persist space name edits across Chrome restarts', async () => {
     // Step 1: Create a new window that will become a space
@@ -45,7 +46,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page1.waitForLoadState('networkidle');
 
     // Step 2: Open extension popup
-    let popup = await helpers.openPopup();
+    let popup = await openExtensionPopup();
     
     // Step 3: Wait for space to appear and edit its name
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
@@ -96,19 +97,16 @@ test.describe('Space Name Persistence E2E Tests', () => {
       ]
     });
 
-    // Get new extension ID
-    const newBackground = context.backgroundPages()[0];
-    if (!newBackground) {
-      await context.waitForEvent('backgroundpage');
+    // Get new extension ID from service worker
+    let newServiceWorker = context.serviceWorkers()[0];
+    if (!newServiceWorker) {
+      newServiceWorker = await context.waitForEvent('serviceworker');
     }
     
-    const newExtensionId = newBackground?.url().split('/')[2] || 
-                          context.serviceWorkers()[0]?.url().split('/')[2] || '';
-    
-    helpers = new ExtensionHelpers(context, newExtensionId);
+    extensionId = newServiceWorker.url().split('/')[2]; // Update global extensionId
 
     // Step 6: Open popup again and verify space name persisted
-    popup = await helpers.openPopup();
+    popup = await openExtensionPopup();
     
     // Wait for spaces to load
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
@@ -132,7 +130,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page3.waitForLoadState('networkidle');
 
     // Open popup and edit names
-    const popup = await helpers.openPopup();
+    const popup = await openExtensionPopup();
     
     // Wait for all spaces to load
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
@@ -179,12 +177,14 @@ test.describe('Space Name Persistence E2E Tests', () => {
       ]
     });
 
-    const newExtensionId = context.backgroundPages()[0]?.url().split('/')[2] || 
-                          context.serviceWorkers()[0]?.url().split('/')[2] || '';
-    helpers = new ExtensionHelpers(context, newExtensionId);
+    let newServiceWorker = context.serviceWorkers()[0];
+    if (!newServiceWorker) {
+      newServiceWorker = await context.waitForEvent('serviceworker');
+    }
+    extensionId = newServiceWorker.url().split('/')[2];
 
     // Verify all names persisted
-    const newPopup = await helpers.openPopup();
+    const newPopup = await openExtensionPopup();
     await newPopup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
 
     for (const name of customNames) {
@@ -198,7 +198,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page1.goto('https://example.com');
     await page1.waitForLoadState('networkidle');
 
-    let popup = await helpers.openPopup();
+    let popup = await openExtensionPopup();
     
     // Edit the space name first
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
@@ -231,7 +231,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page1.close();
 
     // Verify closed space appears with correct name
-    popup = await helpers.openPopup();
+    popup = await openExtensionPopup();
     
     // Look for closed spaces section or toggle
     const closedSpacesToggle = popup.locator('button:has-text("Closed")');
@@ -255,11 +255,14 @@ test.describe('Space Name Persistence E2E Tests', () => {
       ]
     });
 
-    const newExtensionId = context.backgroundPages()[0]?.url().split('/')[2] || '';
-    helpers = new ExtensionHelpers(context, newExtensionId);
+    let newServiceWorker = context.serviceWorkers()[0];
+    if (!newServiceWorker) {
+      newServiceWorker = await context.waitForEvent('serviceworker');
+    }
+    extensionId = newServiceWorker.url().split('/')[2];
 
     // Verify closed space name persisted
-    const newPopup = await helpers.openPopup();
+    const newPopup = await openExtensionPopup();
     
     const newClosedSpacesToggle = newPopup.locator('button:has-text("Closed")');
     if (await newClosedSpacesToggle.isVisible()) {
@@ -275,7 +278,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page1.goto('https://example.com');
     await page1.waitForLoadState('networkidle');
 
-    const popup = await helpers.openPopup();
+    const popup = await openExtensionPopup();
     
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
     const spaceItem = popup.locator('[data-testid="space-item"]').first();
@@ -329,8 +332,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await Promise.all(pages.map(page => page.waitForLoadState('networkidle')));
 
     // Open multiple popups and edit concurrently
-    const popup1 = await helpers.openPopup();
-    const popup2 = await helpers.openPopup();
+    const popup1 = await openExtensionPopup();
+    const popup2 = await openExtensionPopup();
 
     // Edit different spaces in each popup simultaneously
     const editPromises = [
@@ -383,7 +386,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page1.goto('https://example.com');
     await page1.waitForLoadState('networkidle');
 
-    let popup = await helpers.openPopup();
+    let popup = await openExtensionPopup();
     
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
     const spaceItem = popup.locator('[data-testid="space-item"]').first();
@@ -404,7 +407,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await popup.close();
 
     // Reopen popup
-    popup = await helpers.openPopup();
+    popup = await openExtensionPopup();
     
     // Edit mode should not persist (should be in display mode)
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });

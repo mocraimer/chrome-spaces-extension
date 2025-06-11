@@ -50,7 +50,7 @@ export const SpaceList: React.FC<SpaceListProps> = ({
   const [loadedCount, setLoadedCount] = React.useState(INITIAL_LOAD_COUNT);
   
   const { show: showContextMenu, ContextMenu } = useContextMenu({
-    items: [
+    items: () => [
       {
         id: 'delete',
         label: 'Delete Space',

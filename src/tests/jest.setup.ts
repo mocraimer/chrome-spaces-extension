@@ -14,6 +14,10 @@ const mockChrome = {
     onMessage: {
       addListener: jest.fn(),
       removeListener: jest.fn()
+    },
+    onConnect: {
+      addListener: jest.fn(),
+      removeListener: jest.fn()
     }
   },
   storage: {

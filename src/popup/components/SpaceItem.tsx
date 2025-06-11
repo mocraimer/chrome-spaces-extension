@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Space } from '../../shared/types/Space';
 import { useAppDispatch } from '../../shared/hooks/storeHooks';
-import { updateSpaceName, toggleEditMode } from '../store/slices/spacesSlice';
+import { renameSpace, toggleEditMode } from '../store/slices/spacesSlice';
 import { injectSpaceItemStyles } from './SpaceItem.styles';
 
 interface SpaceItemProps {
@@ -28,9 +28,18 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
     injectSpaceItemStyles();
   }, []);
 
-  const handleSave = () => {
-    dispatch(updateSpaceName({ id: space.id, name: editedName }));
-    dispatch(toggleEditMode());
+  const handleSave = async () => {
+    try {
+      await dispatch(renameSpace({ 
+        windowId: parseInt(space.id), 
+        name: editedName 
+      }));
+      dispatch(toggleEditMode());
+    } catch (error) {
+      console.error('Failed to rename space:', error);
+      // Reset to original name on error
+      setEditedName(space.name);
+    }
   };
 
   const handleCancel = () => {

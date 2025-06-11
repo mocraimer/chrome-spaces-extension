@@ -1,7 +1,8 @@
 import { QueuedStateUpdate, StateUpdatePriority } from './StateUpdateQueue';
+import { MessageTypes } from '@/shared/constants';
 
 function debounce(fn: Function, delay: number): () => void {
-  let timeoutId: NodeJS.Timeout;
+  let timeoutId: any;
   return () => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => fn(), delay);
@@ -109,9 +110,12 @@ export class StateBroadcastService {
    */
   public broadcast(update: QueuedStateUpdate): void {
     const isCritical = update.priority === StateUpdatePriority.CRITICAL;
+    const isSpaceNameUpdate = update.type === MessageTypes.SPACE_UPDATED &&
+                              update.payload?.changes?.name;
 
-    if (isCritical) {
-      // Process critical updates immediately
+    if (isCritical || isSpaceNameUpdate) {
+      // Process critical updates and space name updates immediately
+      // This prevents space title reversion due to debounce race conditions
       this.handleStateUpdate(update, -1);
       return;
     }

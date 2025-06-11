@@ -21,7 +21,12 @@ const config: import('webpack').Configuration = {
       {
         test: /\.tsx?$/,
         use: 'ts-loader',
-        exclude: /node_modules/,
+        exclude: [
+          /node_modules/,
+          /\.test\./,
+          /\.spec\./,
+          /src\/tests\//,
+        ],
       },
       {
         test: /\.css$/i,
