@@ -31,7 +31,11 @@ describe('StorageManager', () => {
           urls: [],
           lastModified: 123,
           named: false,
-          version: 1
+          version: 1,
+          permanentId: 'perm_1',
+          createdAt: 123,
+          lastUsed: 123,
+          isActive: true
         },
       };
 
@@ -61,7 +65,11 @@ describe('StorageManager', () => {
           urls: ['https://example.com'],
           lastModified: 200,
           named: true,
-          version: 1
+          version: 1,
+          permanentId: 'perm_1',
+          createdAt: 200,
+          lastUsed: 200,
+          isActive: true
         }
       };
 
@@ -93,7 +101,11 @@ describe('StorageManager', () => {
           urls: ['https://test.com'],
           lastModified: 123,
           named: true,
-          version: 1
+          version: 1,
+          permanentId: 'perm_1',
+          createdAt: 123,
+          lastUsed: 123,
+          isActive: true
         }
       };
 
@@ -135,7 +147,11 @@ describe('StorageManager', () => {
             urls: ['https://imported.com'],
             lastModified: 456,
             named: true,
-            version: 1
+            version: 1,
+            permanentId: 'perm_import_1',
+            createdAt: 456,
+            lastUsed: 456,
+            isActive: false
           }
         }
       };

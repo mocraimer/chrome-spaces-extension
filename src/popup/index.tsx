@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
-import { Popup } from './components/Popup';
+import UnifiedPopup from './components/UnifiedPopup';
 import { ThemeProvider } from './styles/ThemeProvider';
 import { store } from './store/index';
 
@@ -50,7 +50,7 @@ const App: React.FC = () => (
   <ErrorBoundary>
     <Provider store={store}>
       <ThemeProvider>
-        <Popup />
+        <UnifiedPopup />
       </ThemeProvider>
     </Provider>
   </ErrorBoundary>

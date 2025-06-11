@@ -1,15 +1,46 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, chromium, BrowserContext, Page } from '@playwright/test';
+import * as path from 'path';
 import { setupExtensionState, createMockSpace, verifyExtensionState } from './helpers';
-import type { Space } from '../../shared/types/Space';
+import type { Space } from '../src/shared/types/Space';
 
 const extensionId = process.env.EXTENSION_ID || '';
 
 test.describe('Space Restoration E2E Tests', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto(`chrome-extension://${extensionId}/popup/index.html`);
+  let context: BrowserContext;
+  let extensionId: string;
+  const pathToExtension = path.join(__dirname, '..', 'build');
+
+  test.beforeAll(async () => {
+    context = await chromium.launchPersistentContext('', {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${pathToExtension}`,
+        `--load-extension=${pathToExtension}`,
+        '--no-sandbox',
+        '--disable-web-security',
+      ],
+    });
+
+    let [background] = context.serviceWorkers();
+    if (!background) {
+      background = await context.waitForEvent('serviceworker');
+    }
+    extensionId = background.url().split('/')[2];
   });
 
-  test('should successfully restore a space with multiple tabs', async ({ page, context }) => {
+  test.afterAll(async () => {
+    await context.close();
+  });
+
+  const openPopup = async (): Promise<Page> => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.waitForLoadState('domcontentloaded');
+    return page;
+  };
+
+  test('should successfully restore a space with multiple tabs', async ({ context }) => {
+    const page = await openPopup();
     // Create a test space with multiple tabs
     const testSpace = createMockSpace('space-1', 'Multi-Tab Space', [
       'https://example.com',
@@ -32,7 +63,8 @@ test.describe('Space Restoration E2E Tests', () => {
     expect(urls).toContain('https://google.com');
   });
 
-  test('should handle concurrent space restorations', async ({ page, context }) => {
+  test('should handle concurrent space restorations', async ({ context }) => {
+    const page = await openPopup();
     // Create multiple test spaces
     const spaces = {
       'space-1': createMockSpace('space-1', 'Space 1', ['https://example1.com']),
@@ -59,7 +91,8 @@ test.describe('Space Restoration E2E Tests', () => {
     expect(urls).toContain('https://example3.com');
   });
 
-  test('should recover from network interruptions', async ({ page, context }) => {
+  test('should recover from network interruptions', async ({ context }) => {
+    const page = await openPopup();
     // Create a test space
     const testSpace = createMockSpace('space-1', 'Network Test Space', [
       'https://example.com',
@@ -87,9 +120,10 @@ test.describe('Space Restoration E2E Tests', () => {
     expect(urls).toContain('https://github.com');
   });
 
-  test('should handle large space restoration efficiently', async ({ page, context }) => {
+  test('should handle large space restoration efficiently', async ({ context }) => {
+    const page = await openPopup();
     // Create a space with many tabs
-    const urls = Array.from({ length: 20 }, (_, i) => `https://example${i}.com`);
+    const urls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i}`);
     const largeSpace = createMockSpace('large-space', 'Large Space', urls);
     await setupExtensionState(page, { spaces: { 'large-space': largeSpace } });
 
@@ -114,7 +148,8 @@ test.describe('Space Restoration E2E Tests', () => {
     });
   });
 
-  test('should maintain state consistency during failed restoration', async ({ page }) => {
+  test('should maintain state consistency during failed restoration', async ({ context }) => {
+    const page = await openPopup();
     // Create a test space
     const testSpace = createMockSpace('space-1', 'Failed Space', [
       'invalid://url',
@@ -134,7 +169,8 @@ test.describe('Space Restoration E2E Tests', () => {
     expect(state.spaces['space-1'].name).toBe(testSpace.name);
   });
 
-  test('should properly clean up on partial failures', async ({ page, context }) => {
+  test('should properly clean up on partial failures', async ({ context }) => {
+    const page = await openPopup();
     // Create a space with a mix of valid and invalid URLs
     const testSpace = createMockSpace('space-1', 'Partial Failure Space', [
       'https://example.com',

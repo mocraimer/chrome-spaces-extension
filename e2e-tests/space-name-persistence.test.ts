@@ -1,43 +1,40 @@
 import { test, expect, chromium, BrowserContext, Page } from '@playwright/test';
+import path from 'path';
 
 test.describe('Space Name Persistence E2E Tests', () => {
   let context: BrowserContext;
   let extensionId: string;
+  const pathToExtension = path.join(__dirname, '..', 'build');
 
-  test.beforeEach(async () => {
-    // Launch browser with extension
+  // Utility to open the extension popup
+  const openExtensionPopup = async (): Promise<Page> => {
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await popup.waitForLoadState('domcontentloaded');
+    return popup;
+  };
+
+  test.beforeAll(async () => {
     context = await chromium.launchPersistentContext('', {
       headless: false,
       args: [
-        '--disable-extensions-except=./build',
-        '--load-extension=./build',
+        `--disable-extensions-except=${pathToExtension}`,
+        `--load-extension=${pathToExtension}`,
+        '--no-sandbox',
         '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ]
+      ],
     });
 
-    // Get extension ID from service worker (Manifest V3)
-    let serviceWorker = context.serviceWorkers()[0];
-    if (!serviceWorker) {
-      serviceWorker = await context.waitForEvent('serviceworker');
+    let [background] = context.serviceWorkers();
+    if (!background) {
+      background = await context.waitForEvent('serviceworker');
     }
-    
-    extensionId = serviceWorker.url().split('/')[2];
-    console.log('Extension ID:', extensionId);
+    extensionId = background.url().split('/')[2];
   });
 
-  test.afterEach(async () => {
+  test.afterAll(async () => {
     await context.close();
   });
-
-  // Helper function to open extension popup
-  async function openExtensionPopup(): Promise<Page> {
-    // Create a new page and navigate directly to the extension popup
-    const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await page.waitForTimeout(1000); // Wait for extension to initialize
-    return page;
-  }
 
   test('should persist space name edits across Chrome restarts', async () => {
     // Step 1: Create a new window that will become a space
@@ -45,74 +42,44 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page1.goto('https://example.com');
     await page1.waitForLoadState('networkidle');
 
-    // Step 2: Open extension popup
+    // Step 2: Open extension popup and edit the space name
     let popup = await openExtensionPopup();
-    
-    // Step 3: Wait for space to appear and edit its name
-    await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
-    
-    // Find the space and enter edit mode
     const spaceItem = popup.locator('[data-testid="space-item"]').first();
-    await expect(spaceItem).toBeVisible();
-    
-    // Double-click to enter edit mode (or click edit button if available)
-    const editButton = spaceItem.locator('button:has-text("Edit")');
-    if (await editButton.isVisible()) {
-      await editButton.click();
-    } else {
-      // Try double-click on space name
-      const spaceName = spaceItem.locator('.space-name');
-      await spaceName.dblclick();
-    }
+    await spaceItem.waitFor({ state: 'visible', timeout: 10000 });
 
-    // Enter new name
-    const nameInput = popup.locator('[data-testid="space-name-input"]');
-    await expect(nameInput).toBeVisible({ timeout: 5000 });
+    const spaceNameDisplay = spaceItem.locator('.space-name');
+    await spaceNameDisplay.dblclick();
+
+    const nameInput = spaceItem.locator('[data-testid="space-name-input"]');
+    await nameInput.waitFor({ state: 'visible' });
     await nameInput.fill('My Custom Workspace');
-    
-    // Save the changes
     await nameInput.press('Enter');
-    
-    // Wait for save to complete
-    await popup.waitForSelector('text=My Custom Workspace', { timeout: 5000 });
-    
-    // Verify the name was updated
-    await expect(popup.locator('text=My Custom Workspace')).toBeVisible();
 
-    // Step 4: Close popup
+    await expect(popup.locator('text=My Custom Workspace')).toBeVisible();
     await popup.close();
 
-    // Step 5: Simulate Chrome restart by closing and reopening context
-    const extensionPath = './build';
+    // Step 3: Simulate Chrome restart by closing and reopening context
     await context.close();
-
-    // Create new context (simulating Chrome restart)
     context = await chromium.launchPersistentContext('', {
       headless: false,
       args: [
-        '--disable-extensions-except=' + extensionPath,
-        '--load-extension=' + extensionPath,
+        `--disable-extensions-except=${pathToExtension}`,
+        `--load-extension=${pathToExtension}`,
+        '--no-sandbox',
         '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ]
+      ],
     });
 
-    // Get new extension ID from service worker
-    let newServiceWorker = context.serviceWorkers()[0];
-    if (!newServiceWorker) {
-      newServiceWorker = await context.waitForEvent('serviceworker');
+    // Re-establish the extensionId
+    let [background] = context.serviceWorkers();
+    if (!background) {
+      background = await context.waitForEvent('serviceworker');
     }
-    
-    extensionId = newServiceWorker.url().split('/')[2]; // Update global extensionId
+    extensionId = background.url().split('/')[2];
 
-    // Step 6: Open popup again and verify space name persisted
+    // Step 4: Open popup again and verify the name persisted
     popup = await openExtensionPopup();
-    
-    // Wait for spaces to load
-    await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
-    
-    // Verify the custom name persisted across restart
-    await expect(popup.locator('text=My Custom Workspace')).toBeVisible({ timeout: 5000 });
+    await expect(popup.locator('text=My Custom Workspace')).toBeVisible({ timeout: 10000 });
   });
 
   test('should persist multiple space name edits', async () => {

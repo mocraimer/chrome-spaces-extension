@@ -5,7 +5,7 @@ import { StateManager } from './services/StateManager';
 import { MessageHandler } from './services/MessageHandler';
 import { StateUpdateQueue } from './services/StateUpdateQueue';
 import { StateBroadcastService } from './services/StateBroadcastService';
-import { Events, STARTUP_DELAY, RECOVERY_CHECK_DELAY } from '@/shared/constants';
+import { STARTUP_DELAY, RECOVERY_CHECK_DELAY } from '@/shared/constants';
 import { SettingsState } from '@/options/store/slices/settingsSlice';
 import { PerformanceMessageHandler } from './services/performance/PerformanceMessageHandler';
 import { PerformanceTrackingService, MetricCategories } from './services/performance/PerformanceTrackingService';
@@ -18,8 +18,10 @@ class BackgroundService {
   private messageHandler: MessageHandler;
 
   constructor() {
+    console.log('[BackgroundService] Constructor called - Initializing background service');
+    
     // Initialize performance tracking
-    const perfService = PerformanceTrackingService.getInstance();
+    PerformanceTrackingService.getInstance();
     PerformanceMessageHandler.getInstance();
 
     // Initialize services with performance tracking
@@ -51,6 +53,8 @@ class BackgroundService {
   }
 
   private setupEventListeners(): void {
+    console.log('[BackgroundService] Setting up event listeners');
+    
     // Listen for extension startup
     chrome.runtime.onStartup.addListener(async () => {
       console.log('[Startup] Chrome Spaces initializing');
@@ -75,6 +79,7 @@ class BackgroundService {
     });
 
     chrome.windows.onRemoved.addListener(async (windowId) => {
+      console.log(`[BackgroundService] window.onRemoved event for windowId: ${windowId}`);
       await this.stateManager.closeSpace(windowId);
     });
 

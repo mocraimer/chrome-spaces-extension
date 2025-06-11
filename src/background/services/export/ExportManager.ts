@@ -50,7 +50,7 @@ export class ExportManager {
       };
 
       await new Promise<void>((resolve, reject) => {
-        chrome.downloads.download(downloadOptions, (downloadId) => {
+        chrome.downloads.download(downloadOptions, () => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
           } else {
@@ -89,7 +89,17 @@ export class ExportManager {
       urls: space.urls.filter(url => url.trim().length > 0),
       lastModified: space.lastModified,
       named: space.named,
-      version: space.version || 1
+      version: space.version || 1,
+      // Required new fields
+      permanentId: space.permanentId || `export_${space.id}`,
+      createdAt: space.createdAt || Date.now(),
+      lastUsed: space.lastUsed || space.lastModified,
+      isActive: space.isActive ?? true,
+      // Optional fields
+      customName: space.customName,
+      windowId: space.windowId,
+      sourceWindowId: space.sourceWindowId,
+      lastSync: space.lastSync
     };
   }
 }

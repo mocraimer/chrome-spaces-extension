@@ -1,18 +1,45 @@
-import { test, expect } from '@playwright/test';
-import { Page } from '@playwright/test';
+import { test, expect, chromium, BrowserContext, Page } from '@playwright/test';
+import * as path from 'path';
 import { setupExtensionState, createTempExportFile, cleanupTempFiles, createMockSpace, createMockExportData, waitForDownload, readDownloadedFile, verifyExtensionState } from './helpers';
-import type { Space, SpaceState } from '../../shared/types/Space';
-import type { SpaceExportData } from '../../shared/types/ImportExport';
-
-const extensionId = process.env.EXTENSION_ID || '';
+import type { Space, SpaceState } from '../src/shared/types/Space';
+import type { SpaceExportData } from '../src/shared/types/ImportExport';
 
 test.describe('Import/Export functionality', () => {
-  test.beforeEach(async ({ page }) => {
-    // Open the options page
-    await page.goto(`chrome-extension://${extensionId}/options/index.html`);
+  let context: BrowserContext;
+  let extensionId: string;
+  const pathToExtension = path.join(__dirname, '..', 'build');
+
+  test.beforeAll(async () => {
+    context = await chromium.launchPersistentContext('', {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${pathToExtension}`,
+        `--load-extension=${pathToExtension}`,
+        '--no-sandbox',
+        '--disable-web-security',
+      ],
+    });
+
+    let [background] = context.serviceWorkers();
+    if (!background) {
+      background = await context.waitForEvent('serviceworker');
+    }
+    extensionId = background.url().split('/')[2];
   });
 
-  test('should export spaces and allow re-import', async ({ page }) => {
+  test.afterAll(async () => {
+    await context.close();
+  });
+
+  const openOptionsPage = async (): Promise<Page> => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await page.waitForLoadState('domcontentloaded');
+    return page;
+  };
+
+  test('should export spaces and allow re-import', async () => {
+    const page = await openOptionsPage();
     // Create test spaces
     const testSpace = createMockSpace('space-1', 'Test Space');
     await setupExtensionState(page, { spaces: { 'space-1': testSpace } });
@@ -36,7 +63,8 @@ test.describe('Import/Export functionality', () => {
     expect(state.spaces['space-1'].name).toBe(testSpace.name);
   });
 
-  test('should handle invalid import files', async ({ page }) => {
+  test('should handle invalid import files', async () => {
+    const page = await openOptionsPage();
     // Create an invalid export data
     const invalidExportData = createMockExportData({
       'space-1': {
@@ -62,7 +90,8 @@ test.describe('Import/Export functionality', () => {
     await cleanupTempFiles(invalidFilePath);
   });
 
-  test('should show loading states during import/export', async ({ page }) => {
+  test('should show loading states during import/export', async () => {
+    const page = await openOptionsPage();
     // Click export button and verify loading state
     await page.click('button:text("Export Spaces")');
     await expect(page.locator('text=Exporting...')).toBeVisible();
@@ -86,7 +115,8 @@ test.describe('Import/Export functionality', () => {
     await expect(page.locator('button:text("Import Spaces")')).toBeEnabled();
   });
 
-  test('should replace existing spaces when import option is selected', async ({ page }) => {
+  test('should replace existing spaces when import option is selected', async () => {
+    const page = await openOptionsPage();
     // Create initial state with an existing space
     const existingSpace = createMockSpace('space-1', 'Original Space');
     await setupExtensionState(page, { spaces: { 'space-1': existingSpace } });

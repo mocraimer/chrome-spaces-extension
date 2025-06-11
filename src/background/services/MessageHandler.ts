@@ -23,6 +23,20 @@ export class MessageHandler implements IMessageHandler {
     sender: chrome.runtime.MessageSender,
     sendResponse: (response?: any) => void
   ): Promise<void> {
+    // Handle special test messages that don't follow the action pattern
+    if (request.type === 'FORCE_SAVE_STATE') {
+      try {
+        console.log('[MessageHandler] Force save state requested');
+        await this.stateManager.handleShutdown();
+        sendResponse({ success: true });
+        return;
+      } catch (error) {
+        console.error('[MessageHandler] Force save failed:', error);
+        sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        return;
+      }
+    }
+
     if (!typeGuards.action(request.action)) {
       throw createError('Invalid message action', 'INVALID_STATE');
     }

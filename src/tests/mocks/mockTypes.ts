@@ -11,7 +11,13 @@ export const createMockSpace = (id: string, name: string): Space => ({
   version: 1,
   lastSync: Date.now(),
   sourceWindowId: '1', // Default source window
-  named: false
+  named: false,
+  // New required fields
+  permanentId: `perm_${id}`,
+  createdAt: Date.now(),
+  lastUsed: Date.now(),
+  isActive: true,
+  windowId: parseInt(id, 10)
 });
 
 export const mockSpaces: Record<string, Space> = {

@@ -122,7 +122,17 @@ export class ImportManager {
       urls: [...space.urls], // Create new array
       lastModified: space.lastModified,
       named: space.named,
-      version: space.version || 1 // Preserve version or set default
+      version: space.version || 1, // Preserve version or set default
+      // Required new fields
+      permanentId: space.permanentId || `import_${space.id}_${Date.now()}`,
+      createdAt: space.createdAt || Date.now(),
+      lastUsed: space.lastUsed || space.lastModified,
+      isActive: false, // Imported spaces are initially inactive
+      // Optional fields
+      customName: space.customName,
+      windowId: space.windowId,
+      sourceWindowId: space.sourceWindowId,
+      lastSync: space.lastSync
     };
   }
 

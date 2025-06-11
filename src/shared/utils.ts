@@ -34,11 +34,38 @@ const chromeOp = async <T>(
 
 // Type guards
 const guards = {
-  space: (x: unknown): x is Space =>
+  space: (x: unknown): x is Space => {
+    if (!checks.isObj(x)) return false;
+    
+    // Required fields
+    const requiredFields = ['id', 'name', 'urls', 'lastModified', 'named', 'permanentId', 'createdAt', 'lastUsed', 'isActive', 'version'] as const;
+    if (!checks.hasProps(x, ...requiredFields)) return false;
+    
+    // Type checks
+    if (!checks.isArr((x as any).urls)) return false;
+    if (typeof (x as any).named !== 'boolean') return false;
+    if (typeof (x as any).isActive !== 'boolean') return false;
+    if (typeof (x as any).version !== 'number') return false;
+    if (typeof (x as any).lastModified !== 'number') return false;
+    if (typeof (x as any).createdAt !== 'number') return false;
+    if (typeof (x as any).lastUsed !== 'number') return false;
+    
+    // Optional fields type checks
+    const obj = x as any;
+    if (obj.customName !== undefined && typeof obj.customName !== 'string') return false;
+    if (obj.windowId !== undefined && typeof obj.windowId !== 'number') return false;
+    if (obj.sourceWindowId !== undefined && typeof obj.sourceWindowId !== 'string') return false;
+    if (obj.lastSync !== undefined && typeof obj.lastSync !== 'number') return false;
+    
+    return true;
+  },
+  
+  // Legacy space guard for migration purposes
+  legacySpace: (x: unknown): boolean =>
     checks.isObj(x) &&
     checks.hasProps(x, 'id', 'name', 'urls', 'lastModified', 'named') &&
-    checks.isArr(x.urls) &&
-    typeof x.named === 'boolean',
+    checks.isArr((x as any).urls) &&
+    typeof (x as any).named === 'boolean',
   
   action: (x: unknown): x is keyof typeof ActionTypes | keyof typeof MessageTypes => {
     if (typeof x !== 'string' || x.length === 0) return false;

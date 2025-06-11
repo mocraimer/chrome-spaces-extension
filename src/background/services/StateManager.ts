@@ -283,20 +283,17 @@ export class StateManager implements IStateManager {
           version: existingSpace.version + 1
         };
       } else {
-        // Create new space
+        // Create new space using StorageManager
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
-
-        updatedSpaces[spaceId] = {
-          id: spaceId,
-          name: `${DEFAULT_SPACE_NAME} ${spaceId}`,
-          urls,
-          lastModified: Date.now(),
-          version: 1,
-          lastSync: Date.now(),
-          sourceWindowId: spaceId,
-          named: false
-        };
+        const name = `${DEFAULT_SPACE_NAME} ${spaceId}`;
+        const space = await this.storageManager.createSpace(window.id, name, urls);
+        
+        // Add additional fields for backward compatibility
+        space.lastSync = Date.now();
+        space.sourceWindowId = spaceId;
+        
+        updatedSpaces[spaceId] = space;
       }
     }
 
@@ -377,6 +374,15 @@ export class StateManager implements IStateManager {
     return space?.name || `${DEFAULT_SPACE_NAME} ${spaceId}`;
   }
 
+  /**
+   * Test-only method to bypass cache and reload from storage.
+   */
+  async get_space_by_id_with_reload(spaceId: string): Promise<Space | null> {
+    this.spaces = await this.storageManager.loadSpaces();
+    this.closedSpaces = await this.storageManager.loadClosedSpaces();
+    return this.spaces[spaceId] || this.closedSpaces[spaceId] || null;
+  }
+
   @PerformanceTrackingService.track(MetricCategories.STATE, 1000)
   async createSpace(windowId: number, spaceName?: string, options?: { name?: string; named?: boolean }): Promise<void> {
     const spaceId = windowId.toString();
@@ -392,17 +398,10 @@ export class StateManager implements IStateManager {
       const tabs = await this.tabManager.getTabs(windowId);
       const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
 
-      // Create new space
-      const space: Space = {
-        id: spaceId,
-        name: options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${spaceId}`,
-        urls,
-        lastModified: Date.now(),
-        version: 1,
-        lastSync: Date.now(),
-        sourceWindowId: spaceId,
-        named: options?.named ?? false
-      };
+      // Create new space using StorageManager
+      const name = options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${spaceId}`;
+      const customName = options?.named ? name : undefined;
+      const space = await this.storageManager.createSpace(windowId, name, urls, customName);
 
       // Atomic update
       const updatedSpaces = { ...this.spaces, [spaceId]: space };
@@ -419,17 +418,15 @@ export class StateManager implements IStateManager {
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 1000)
   async closeSpace(windowId: number): Promise<void> {
+    console.log(`[StateManager] closeSpace called for windowId: ${windowId}`);
     const spaceId = windowId.toString();
     const space = this.spaces[spaceId];
 
     if (!space) {
-      throw new Error('Space not found');
-    }
-
-    // Check if window still exists
-    const windowExists = await this.windowManager.windowExists(windowId);
-    if (windowExists) {
-      await this.windowManager.closeWindow(windowId);
+      // If space is not found, it might have been closed already.
+      // This can happen in scenarios like browser shutdown.
+      console.log(`[StateManager] Space not found for windowId: ${windowId}, returning.`);
+      return;
     }
 
     // Move space to closed spaces
@@ -437,13 +434,13 @@ export class StateManager implements IStateManager {
     this.closedSpaces[spaceId] = {
       ...space,
       lastModified: Date.now(),
-      version: space.version + 1
+      version: space.version + 1,
     };
 
     // Save updates
     await Promise.all([
       this.storageManager.saveSpaces(this.spaces),
-      this.storageManager.saveClosedSpaces(this.closedSpaces)
+      this.storageManager.saveClosedSpaces(this.closedSpaces),
     ]);
 
     this.broadcastStateUpdate();
@@ -507,6 +504,27 @@ export class StateManager implements IStateManager {
   }
 
   async renameSpace(windowId: number, name: string): Promise<void> {
-    await this.setSpaceName(windowId.toString(), name);
+    const spaceId = windowId.toString();
+    await this.acquireLock(spaceId);
+    
+    try {
+      // Update custom name using StorageManager
+      await this.storageManager.updateSpaceCustomName(spaceId, name);
+      
+      // Reload spaces to get updated data
+      this.spaces = await this.storageManager.loadSpaces();
+      this.closedSpaces = await this.storageManager.loadClosedSpaces();
+      
+      // Invalidate cache
+      this.invalidateCache(`space:${spaceId}`);
+      this.invalidateCache('spaces');
+      this.invalidateCache('closedSpaces');
+      
+      this.broadcastStateUpdate();
+    } catch (error) {
+      throw new Error(`Failed to rename space: ${(error as Error).message}`);
+    } finally {
+      this.releaseLock(spaceId);
+    }
   }
 }
