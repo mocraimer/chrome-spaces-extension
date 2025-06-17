@@ -7,7 +7,7 @@ const config: import('webpack').Configuration = {
   devtool: 'source-map',
   mode: 'development', // Force development mode to disable minification
   entry: {
-    popup: path.join(__dirname, '/src/popup/simple-index.tsx'),
+    popup: path.join(__dirname, '/src/popup/index.tsx'),
     options: path.join(__dirname, '/src/options/index.tsx'),
     background: path.join(__dirname, '/src/background/index.ts'),
   },
