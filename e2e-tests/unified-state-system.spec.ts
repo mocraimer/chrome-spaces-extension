@@ -1,5 +1,6 @@
 import { test, expect, chromium, type BrowserContext, type Page } from '@playwright/test';
 import { join } from 'path';
+import { waitForServiceWorker } from './helpers';
 
 const projectRoot = process.cwd();
 
@@ -10,24 +11,22 @@ test.describe('Unified State Management System', () => {
   test.beforeAll(async () => {
     // Launch browser with extension
     const extensionPath = join(projectRoot, 'build');
-    
+
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${extensionPath}`,
         `--load-extension=${extensionPath}`,
         '--no-sandbox',
         '--disable-web-security',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-features=VizDisplayCompositor',
       ],
     });
 
-    // Get extension ID from service worker (this is the reliable method)
-    let background = context.serviceWorkers()[0];
-    if (!background) {
-      background = await context.waitForEvent('serviceworker');
-    }
-
-    extensionId = background.url().split('/')[2];
+    // Use robust service worker detection
+    extensionId = await waitForServiceWorker(context);
     console.log('🔌 Extension loaded with ID:', extensionId);
     expect(extensionId).toBeTruthy();
   });

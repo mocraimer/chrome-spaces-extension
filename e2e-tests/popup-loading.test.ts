@@ -1,5 +1,6 @@
 import { test, expect, chromium, BrowserContext } from '@playwright/test';
 import path from 'path';
+import { waitForServiceWorker } from './helpers';
 
 test.describe('Popup Loading Tests', () => {
   let context: BrowserContext;
@@ -8,22 +9,20 @@ test.describe('Popup Loading Tests', () => {
   test.beforeAll(async () => {
     const pathToExtension = path.join(__dirname, '..', 'build');
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
         '--disable-web-security',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
       ],
     });
 
-    let [background] = context.serviceWorkers();
-    if (!background) {
-      background = await context.waitForEvent('serviceworker');
-    }
-
-    extensionId = background.url().split('/')[2];
-    console.log('Extension ID:', extensionId);
+    // Use robust service worker detection
+    extensionId = await waitForServiceWorker(context);
+    console.log('✅ Extension ID obtained:', extensionId);
   });
 
   test.afterAll(async () => {

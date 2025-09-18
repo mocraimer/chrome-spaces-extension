@@ -1,5 +1,6 @@
 import { test, expect, chromium, Page, BrowserContext } from '@playwright/test';
 import path from 'path';
+import { waitForServiceWorker } from './helpers';
 
 test.describe('Chrome Spaces Extension', () => {
   let context: BrowserContext;
@@ -7,24 +8,29 @@ test.describe('Chrome Spaces Extension', () => {
 
   test.beforeAll(async () => {
     // Launch browser with extension
-    const pathToExtension = path.join(__dirname, '..', 'build');
+    const pathToExtension = path.resolve(__dirname, '..', 'build');
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
+        '--enable-logging=stderr',
+        '--vmodule=*/browser/extensions/*=1',
+        '--enable-service-worker-script-debugging',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
       ],
     });
 
-    // Get extension ID
-    let [background] = context.serviceWorkers();
-    if (!background) {
-      background = await context.waitForEvent('serviceworker');
-    }
-
-    extensionId = background.url().split('/')[2];
-    console.log('Extension ID:', extensionId);
+    // Use robust service worker detection
+    extensionId = await waitForServiceWorker(context);
+    console.log('✅ Extension ID obtained:', extensionId);
   });
 
   test.afterAll(async () => {
@@ -80,11 +86,14 @@ test.describe('Chrome Spaces Extension', () => {
   });
 
   test('Background script runs without errors', async () => {
-    // Check that background script is running
-    const [background] = context.serviceWorkers();
+    // Check that background script is running using the same detection
+    const serviceWorkers = context.serviceWorkers();
+    expect(serviceWorkers.length).toBeGreaterThan(0);
+
+    const background = serviceWorkers[0];
     expect(background).toBeTruthy();
     expect(background.url()).toContain(extensionId);
-    
+
     console.log('✅ Background script is running');
   });
 

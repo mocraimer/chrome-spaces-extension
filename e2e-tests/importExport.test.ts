@@ -11,7 +11,7 @@ test.describe('Import/Export functionality', () => {
 
   test.beforeAll(async () => {
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,

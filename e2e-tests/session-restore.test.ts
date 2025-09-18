@@ -8,7 +8,7 @@ test.describe('Session Persistence and Auto-Restore', () => {
 
   const launchBrowser = async () => {
     const newContext = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,

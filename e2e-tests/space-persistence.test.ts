@@ -4,17 +4,26 @@ import * as path from 'path';
 test.describe('Space Persistence and Auto-Restore', () => {
   let browserContext: BrowserContext;
   let extensionId: string;
-  const pathToExtension = path.join(__dirname, '..', 'build');
+  const pathToExtension = path.resolve(__dirname, '..', 'build');
 
   test.beforeAll(async () => {
     // Launch a new browser context with the extension loaded
     browserContext = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
+        '--enable-logging=stderr',
+        '--vmodule=*/browser/extensions/*=1',
+        '--enable-service-worker-script-debugging',
         '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
       ],
     });
 
@@ -60,12 +69,21 @@ test.describe('Space Persistence and Auto-Restore', () => {
     // Phase 2: Close the browser and reopen it
     await browserContext.close();
     browserContext = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
+        '--enable-logging=stderr',
+        '--vmodule=*/browser/extensions/*=1',
+        '--enable-service-worker-script-debugging',
         '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
       ],
     });
     

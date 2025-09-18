@@ -8,7 +8,7 @@ test.describe('Enhanced Popup Tests', () => {
   test.beforeAll(async () => {
     const pathToExtension = path.join(__dirname, '..', 'build');
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,

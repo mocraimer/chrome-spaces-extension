@@ -12,7 +12,7 @@ test.describe('Space Restoration E2E Tests', () => {
 
   test.beforeAll(async () => {
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,

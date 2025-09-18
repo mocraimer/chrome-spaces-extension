@@ -16,7 +16,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
 
   test.beforeAll(async () => {
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
@@ -61,7 +61,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     // Step 3: Simulate Chrome restart by closing and reopening context
     await context.close();
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
@@ -136,7 +136,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await context.close();
     
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         '--disable-extensions-except=./build',
         '--load-extension=./build',
@@ -215,7 +215,7 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await context.close();
     
     context = await chromium.launchPersistentContext('', {
-      headless: false,
+      headless: true,
       args: [
         '--disable-extensions-except=./build',
         '--load-extension=./build'
