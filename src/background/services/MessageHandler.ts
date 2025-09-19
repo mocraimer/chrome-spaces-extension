@@ -131,14 +131,9 @@ export class MessageHandler implements IMessageHandler {
         );
       }
 
-      // First restore the space state to preserve named status
-      await this.stateManager.restoreSpace(spaceId);
-      
-      // Then create the space with the window, maintaining its properties
-      await this.stateManager.createSpace(window.id!, undefined, {
-        name: space.name,
-        named: space.named
-      });
+      // Restore the space and associate it with the new window
+      // This preserves customName and avoids creating duplicates
+      await this.stateManager.restoreSpace(spaceId, window.id!);
 
       return { success: true, windowId: window.id };
     } catch (error) {

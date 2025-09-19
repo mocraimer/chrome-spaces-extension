@@ -5,7 +5,7 @@ import { StateManager } from './services/StateManager';
 import { MessageHandler } from './services/MessageHandler';
 import { StateUpdateQueue } from './services/StateUpdateQueue';
 import { StateBroadcastService } from './services/StateBroadcastService';
-import { STARTUP_DELAY, RECOVERY_CHECK_DELAY } from '@/shared/constants';
+import { STARTUP_DELAY, RECOVERY_CHECK_DELAY, SETTINGS_KEY } from '@/shared/constants';
 import { SettingsState } from '@/options/store/slices/settingsSlice';
 import { PerformanceMessageHandler } from './services/performance/PerformanceMessageHandler';
 import { PerformanceTrackingService, MetricCategories } from './services/performance/PerformanceTrackingService';
@@ -19,7 +19,7 @@ class BackgroundService {
 
   constructor() {
     console.log('[BackgroundService] Constructor called - Initializing background service');
-    
+
     // Initialize performance tracking
     PerformanceTrackingService.getInstance();
     PerformanceMessageHandler.getInstance();
@@ -33,9 +33,9 @@ class BackgroundService {
       maxQueueSize: 50,
       validateUpdates: true
     });
-    
+
     const broadcastService = new StateBroadcastService();
-    
+
     this.stateManager = new StateManager(
       this.windowManager,
       this.tabManager,
@@ -49,7 +49,27 @@ class BackgroundService {
       this.stateManager
     );
 
-    this.setupEventListeners();
+    // Initialize services asynchronously but immediately
+    this.initializeServices();
+  }
+
+  /**
+   * Initialize state manager and setup event listeners
+   * This ensures state is loaded before any events can modify it
+   */
+  private async initializeServices(): Promise<void> {
+    try {
+      console.log('[BackgroundService] Initializing state manager...');
+      await this.stateManager.initialize();
+      console.log('[BackgroundService] State manager initialized');
+
+      // Setup event listeners only after initialization
+      this.setupEventListeners();
+    } catch (error) {
+      console.error('[BackgroundService] Failed to initialize services:', error);
+      // Still setup listeners to handle future events
+      this.setupEventListeners();
+    }
   }
 
   private setupEventListeners(): void {
@@ -75,16 +95,19 @@ class BackgroundService {
 
     // Window event listeners
     chrome.windows.onCreated.addListener(async (window) => {
+      await this.stateManager.ensureInitialized();
       await this.stateManager.createSpace(window.id!);
     });
 
     chrome.windows.onRemoved.addListener(async (windowId) => {
       console.log(`[BackgroundService] window.onRemoved event for windowId: ${windowId}`);
+      await this.stateManager.ensureInitialized();
       await this.stateManager.closeSpace(windowId);
     });
 
     chrome.windows.onFocusChanged.addListener(async (windowId) => {
       if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+        await this.stateManager.ensureInitialized();
         await this.ensureWindowHasSpace(windowId);
       }
     });
@@ -92,12 +115,14 @@ class BackgroundService {
     // Tab event listeners
     chrome.tabs.onCreated.addListener(async (tab) => {
       if (tab.windowId) {
+        await this.stateManager.ensureInitialized();
         await this.ensureWindowHasSpace(tab.windowId);
       }
     });
 
     chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
       if (changeInfo.url && tab.windowId) {
+        await this.stateManager.ensureInitialized();
         await this.stateManager.synchronizeWindowsAndSpaces();
       }
     });
@@ -134,8 +159,8 @@ class BackgroundService {
 
   private async loadSettings(): Promise<SettingsState | null> {
     try {
-      const data = await chrome.storage.local.get('settings');
-      return data.settings || null;
+      const data = await chrome.storage.local.get(SETTINGS_KEY);
+      return data[SETTINGS_KEY] || null;
     } catch (error) {
       console.error('Error loading settings:', error);
       return null;

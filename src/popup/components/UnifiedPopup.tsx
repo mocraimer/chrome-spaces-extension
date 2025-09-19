@@ -130,16 +130,16 @@ const UnifiedPopup: React.FC = () => {
   });
 
   // Handle space actions
-  const handleSwitchToSpace = async (windowId: number) => {
+  const handleSwitchToSpace = useCallback(async (windowId: number) => {
     try {
       await dispatch(switchToSpace(windowId));
       window.close();
     } catch (err) {
       console.error('Failed to switch to space:', err);
     }
-  };
+  }, [dispatch]);
 
-  const handleRestoreSpace = async (space: Space) => {
+  const handleRestoreSpace = useCallback(async (space: Space) => {
     try {
       await dispatch(restoreSpace(space.id));
       // Refresh data after restore
@@ -147,22 +147,22 @@ const UnifiedPopup: React.FC = () => {
     } catch (err) {
       console.error('Failed to restore space:', err);
     }
-  };
+  }, [dispatch]);
 
-  const handleRemoveSpace = async (spaceId: string) => {
+  const handleRemoveSpace = useCallback(async (spaceId: string) => {
     try {
       await dispatch(removeClosedSpace(spaceId));
       setShowConfirmDelete(null);
     } catch (err) {
       console.error('Failed to remove space:', err);
     }
-  };
+  }, [dispatch]);
 
   // Handle editing
-  const startEditing = (space: Space) => {
+  const startEditing = useCallback((space: Space) => {
     setEditingSpaceId(space.id);
     setEditingName(getDisplayName(space));
-    
+
     // Focus the edit input after a short delay
     setTimeout(() => {
       if (editInputRef.current) {
@@ -170,11 +170,11 @@ const UnifiedPopup: React.FC = () => {
         editInputRef.current.select();
       }
     }, 100);
-  };
+  }, [getDisplayName]);
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = useCallback(async () => {
     if (!editingSpaceId) return;
-    
+
     const validation = validateSpaceName(editingName, editingSpaceId);
     if (!validation.valid) {
       alert(validation.error);
@@ -185,22 +185,22 @@ const UnifiedPopup: React.FC = () => {
       const space = spaces[editingSpaceId] || closedSpaces[editingSpaceId];
       if (space && space.windowId) {
         await dispatch(renameSpace({ windowId: space.windowId, name: editingName.trim() }));
-        
+
         // Refresh data after rename
         await dispatch(fetchSpaces());
       }
-      
+
       setEditingSpaceId(null);
       setEditingName('');
     } catch (err) {
       console.error('Failed to save space name:', err);
     }
-  };
+  }, [editingSpaceId, editingName, validateSpaceName, spaces, closedSpaces, dispatch]);
 
-  const handleCancelEdit = () => {
+  const handleCancelEdit = useCallback(() => {
     setEditingSpaceId(null);
     setEditingName('');
-  };
+  }, []);
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -244,7 +244,7 @@ const UnifiedPopup: React.FC = () => {
         }
         break;
     }
-  }, [selectedIndex, filteredSpaces, filteredClosedSpaces, editingSpaceId]);
+  }, [selectedIndex, filteredSpaces, filteredClosedSpaces, editingSpaceId, handleSwitchToSpace, handleRestoreSpace, handleCancelEdit, startEditing]);
 
   // Handle edit input key events
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -253,7 +253,7 @@ const UnifiedPopup: React.FC = () => {
     } else if (e.key === 'Escape') {
       handleCancelEdit();
     }
-  }, []);
+  }, [handleSaveEdit, handleCancelEdit]);
 
   // Inject styles
   useEffect(() => {

@@ -20,6 +20,7 @@ export class StateManager implements IStateManager {
   private closedSpaces: Record<string, Space> = {};
   private initialized = false;
   private updateLock = new Map<string, Promise<void>>();
+  private lockResolvers = new Map<string, () => void>();
   
   // Cache configuration
   private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -92,6 +93,16 @@ export class StateManager implements IStateManager {
     this.initialized = true;
   }
 
+  /**
+   * Ensures the state manager is initialized before any operations
+   * This is critical for service worker wake-up scenarios
+   */
+  async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+  }
+
   getAllSpaces(): Record<string, Space> {
     return { ...this.spaces };
   }
@@ -117,21 +128,31 @@ export class StateManager implements IStateManager {
   }
 
   /**
-   * Update space window association
+   * Acquire a lock for a specific space ID to prevent race conditions
    */
   private async acquireLock(spaceId: string): Promise<void> {
+    // Wait for any existing lock to be released
     while (this.updateLock.has(spaceId)) {
       await this.updateLock.get(spaceId);
     }
-    
+
+    // Create a new lock promise with its resolver
+    let resolveFunc: (() => void) | undefined;
     const lockPromise = new Promise<void>(resolve => {
-      this.updateLock.set(spaceId, Promise.resolve().then(resolve));
+      resolveFunc = resolve;
     });
-    
-    await lockPromise;
+
+    // Store the lock and its resolver
+    this.updateLock.set(spaceId, lockPromise);
+    this.lockResolvers.set(spaceId, resolveFunc!);
   }
 
   private releaseLock(spaceId: string): void {
+    const resolver = this.lockResolvers.get(spaceId);
+    if (resolver) {
+      resolver(); // Release the lock
+      this.lockResolvers.delete(spaceId);
+    }
     this.updateLock.delete(spaceId);
   }
 
@@ -280,25 +301,19 @@ export class StateManager implements IStateManager {
         this.spaces[spaceId] ?? this.closedSpaces[spaceId] ?? null;
 
       if (existingSpace) {
-        const baseVersion = existingSpace.version ?? 0;
-        const reopened = Object.prototype.hasOwnProperty.call(
-          updatedClosedSpaces,
-          spaceId
-        );
-        if (reopened) {
-          delete updatedClosedSpaces[spaceId];
-        }
+        // Update existing space with current window state
+        const tabs = await this.tabManager.getTabs(window.id);
+        const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
 
-        updatedSpaces[spaceId] = {
+        updatedSpaces[existingSpace.id] = {
           ...existingSpace,
-          id: spaceId,
-          sourceWindowId: spaceId,
-          windowId: window.id,
-          isActive: true,
-          lastSync: now,
-          lastModified: now,
-          lastUsed: now,
-          version: baseVersion + 1
+          urls, // Update URLs from current tabs
+          windowId: window.id, // Update current window ID
+          isActive: true, // Mark as active since window exists
+          sourceWindowId: spaceId, // Update source window ID
+          lastModified: Date.now(),
+          lastSync: Date.now(),
+          version: existingSpace.version + 1
         };
       } else {
         const tabs = await this.tabManager.getTabs(window.id);
@@ -341,6 +356,18 @@ export class StateManager implements IStateManager {
       this.storageManager.saveSpaces(this.spaces),
       this.storageManager.saveClosedSpaces(this.closedSpaces)
     ]);
+
+
+    // Queue the state update for broadcasting
+    await this.updateQueue.enqueue({
+      id: `sync-spaces-${Date.now()}`,
+      type: MessageTypes.SPACES_UPDATED,
+      payload: {
+        spaces: this.spaces,
+        action: 'synchronized'
+      },
+      priority: StateUpdatePriority.NORMAL
+    });
 
     this.broadcastStateUpdate();
   }
@@ -475,6 +502,8 @@ export class StateManager implements IStateManager {
     delete this.spaces[spaceId];
     this.closedSpaces[spaceId] = {
       ...space,
+      windowId: undefined, // Clear window ID since window is closed
+      isActive: false, // Mark as inactive
       lastModified: Date.now(),
       version: space.version + 1,
     };
@@ -485,13 +514,25 @@ export class StateManager implements IStateManager {
       this.storageManager.saveClosedSpaces(this.closedSpaces),
     ]);
 
+    // Queue the state update for broadcasting
+    await this.updateQueue.enqueue({
+      id: `close-space-${spaceId}-${Date.now()}`,
+      type: MessageTypes.SPACE_UPDATED,
+      payload: {
+        spaceId,
+        space: this.closedSpaces[spaceId],
+        action: 'closed'
+      },
+      priority: StateUpdatePriority.HIGH
+    });
+
     this.broadcastStateUpdate();
   }
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
-  async restoreSpace(spaceId: string): Promise<void> {
+  async restoreSpace(spaceId: string, windowId?: number): Promise<void> {
     await this.acquireLock(spaceId);
-    
+
     try {
       const space = this.closedSpaces[spaceId];
       if (!space) {
@@ -500,6 +541,9 @@ export class StateManager implements IStateManager {
 
       const updatedSpace: Space = {
         ...space,
+        windowId: windowId, // Associate with new window if provided
+        isActive: true, // Mark as active when restored
+        sourceWindowId: windowId?.toString() || space.sourceWindowId,
         lastModified: Date.now(),
         version: space.version + 1
       };
@@ -525,6 +569,18 @@ export class StateManager implements IStateManager {
       // Update memory state
       this.spaces = updatedSpaces;
       this.closedSpaces = updatedClosedSpaces;
+
+      // Queue the state update for broadcasting
+      await this.updateQueue.enqueue({
+        id: `restore-space-${spaceId}-${Date.now()}`,
+        type: MessageTypes.SPACE_UPDATED,
+        payload: {
+          spaceId,
+          space: updatedSpace,
+          action: 'restored'
+        },
+        priority: StateUpdatePriority.HIGH
+      });
 
       this.broadcastStateUpdate();
     } catch (error) {
