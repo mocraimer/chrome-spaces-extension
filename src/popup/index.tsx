@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import UnifiedPopup from './components/UnifiedPopup';
+import BroadcastListener from './components/BroadcastListener';
 import { ThemeProvider } from './styles/ThemeProvider';
 import { store } from './store/index';
 
@@ -50,6 +51,7 @@ const App: React.FC = () => (
   <ErrorBoundary>
     <Provider store={store}>
       <ThemeProvider>
+        <BroadcastListener />
         <UnifiedPopup />
       </ThemeProvider>
     </Provider>
@@ -63,9 +65,15 @@ console.log('Store state:', store.getState());
 // Initialize app
 const container = document.getElementById('root');
 if (!container) {
-  console.error('Failed to find root element');
-  throw new Error('Root element not found');
-}
+  console.warn('Root element not found - this may be normal if not on the popup page');
+  // Only throw error if we're actually on the popup page
+  if (window.location.pathname.includes('popup.html')) {
+    console.error('Failed to find root element on popup page');
+    throw new Error('Root element not found');
+  }
+  // Gracefully exit if we're not on the popup page
+  console.log('Skipping React initialization - not on popup page');
+} else {
 
 // Debug logging for React initialization
 try {
@@ -100,6 +108,7 @@ try {
 } catch (error) {
   console.error('Failed to initialize app:', error);
   throw error;
+}
 }
 
 // Error boundary styles

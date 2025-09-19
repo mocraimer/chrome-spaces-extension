@@ -242,7 +242,8 @@ export class StorageManager implements IStorageManager {
       createdAt: Date.now(),
       lastUsed: Date.now(),
       isActive: true,
-      windowId: windowId
+      windowId: windowId,
+      sourceWindowId: windowId.toString() // Set sourceWindowId to enable hasSpace checks
     };
 
     return space;

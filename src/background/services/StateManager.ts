@@ -368,6 +368,7 @@ export class StateManager implements IStateManager {
       },
       priority: StateUpdatePriority.NORMAL
     });
+    await this.storageManager.saveSpaces(this.spaces);
 
     this.broadcastStateUpdate();
   }
