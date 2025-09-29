@@ -119,21 +119,16 @@ export class MessageHandler implements IMessageHandler {
         return { success: false, error: 'Invalid space or no URLs' };
       }
 
-      // Create new window with first URL
-      const window = await this.windowManager.createWindow([space.urls[0]]);
+      // Create new window with ALL URLs at once - WindowManager handles multiple tabs efficiently
+      const window = await this.windowManager.createWindow(space.urls);
 
-      // Add remaining tabs
-      if (space.urls.length > 1) {
-        await Promise.all(
-          space.urls.slice(1).map(url =>
-            this.tabManager.createTab(window.id!, url)
-          )
-        );
+      if (!window.id) {
+        return { success: false, error: 'Failed to create window' };
       }
 
       // Restore the space and associate it with the new window
       // This preserves customName and avoids creating duplicates
-      await this.stateManager.restoreSpace(spaceId, window.id!);
+      await this.stateManager.restoreSpace(spaceId, window.id);
 
       return { success: true, windowId: window.id };
     } catch (error) {

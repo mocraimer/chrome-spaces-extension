@@ -5,6 +5,23 @@ export interface RootState {
   spaces: SpacesState;
 }
 
+export interface OptimisticUpdate {
+  id: string;
+  type: 'rename' | 'close' | 'restore' | 'remove';
+  payload: any;
+  timestamp: number;
+  rollbackData?: any;
+}
+
+export interface ActionQueue {
+  id: string;
+  type: string;
+  payload: any;
+  timestamp: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  retryCount: number;
+}
+
 export interface SpacesState {
   spaces: Record<string, Space>;
   closedSpaces: Record<string, Space>;
@@ -14,6 +31,12 @@ export interface SpacesState {
   selectedSpaceId: string | null;
   searchQuery: string;
   editMode: boolean;
+  // Optimization features
+  optimisticUpdates: Record<string, OptimisticUpdate>;
+  actionQueue: ActionQueue[];
+  lastSyncTimestamp: number;
+  syncInProgress: boolean;
+  operationErrors: Record<string, string>;
 }
 
 // Action types
@@ -72,6 +95,42 @@ export type ActionCreator<T = void> = T extends void
 export type AsyncActionCreator<Args = void, Result = void> = (
   args: Args
 ) => AppThunk<Promise<Result>>;
+
+// Debounce utility for rapid operations
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  delay: number
+): T & { cancel: () => void } {
+  let timeoutId: NodeJS.Timeout;
+  let cancelled = false;
+
+  const debounced = ((...args: Parameters<T>) => {
+    if (cancelled) return Promise.resolve();
+
+    clearTimeout(timeoutId);
+    return new Promise((resolve, reject) => {
+      timeoutId = setTimeout(async () => {
+        if (cancelled) {
+          resolve(undefined);
+          return;
+        }
+        try {
+          const result = await func(...args);
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      }, delay);
+    });
+  }) as T;
+
+  (debounced as any).cancel = () => {
+    cancelled = true;
+    clearTimeout(timeoutId);
+  };
+
+  return debounced as T & { cancel: () => void };
+}
 
 // Helper functions
 export function createAction<T = void>(type: string): ActionCreator<T> {

@@ -21,12 +21,20 @@ export class StateManager implements IStateManager {
   private initialized = false;
   private updateLock = new Map<string, Promise<void>>();
   private lockResolvers = new Map<string, () => void>();
-  
+
   // Cache configuration
   private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private static readonly INCREMENTAL_UPDATE_THRESHOLD = 10; // Number of changes before full sync
   private stateCache: Map<string, StateCache> = new Map();
   private changeCounter: Map<string, number> = new Map();
+
+  // Debounced broadcast configuration
+  private broadcastDebounceTime = 100; // ms
+  private broadcastTimeoutId: NodeJS.Timeout | null = null;
+  private pendingBroadcastData: any = null;
+  private lastBroadcastTime = 0;
+  private broadcastQueue: Array<{ timestamp: number; data: any }> = [];
+  private maxBroadcastQueue = 50; // Maximum queued broadcasts
 
   constructor(
     private windowManager: WindowManager,
@@ -278,6 +286,15 @@ export class StateManager implements IStateManager {
   }
 
   async handleShutdown(): Promise<void> {
+    // Clean up broadcast timeout on shutdown
+    if (this.broadcastTimeoutId) {
+      clearTimeout(this.broadcastTimeoutId);
+      this.broadcastTimeoutId = null;
+    }
+
+    // Send final broadcast before shutdown
+    this.broadcastStateUpdate();
+
     await this.synchronizeWindowsAndSpaces();
   }
 
@@ -313,7 +330,11 @@ export class StateManager implements IStateManager {
           sourceWindowId: spaceId, // Update source window ID
           lastModified: Date.now(),
           lastSync: Date.now(),
-          version: existingSpace.version + 1
+          version: existingSpace.version + 1,
+          // CRITICAL: Preserve custom naming - don't override customName or name if they exist
+          name: existingSpace.customName || existingSpace.name, // Use custom name if set
+          customName: existingSpace.customName, // Preserve custom name
+          named: existingSpace.named // Preserve named status
         };
       } else {
         const tabs = await this.tabManager.getTabs(window.id);
@@ -605,23 +626,39 @@ export class StateManager implements IStateManager {
   async renameSpace(windowId: number, name: string): Promise<void> {
     const spaceId = windowId.toString();
     await this.acquireLock(spaceId);
-    
+
     try {
+      const trimmedName = name.trim().replace(/\s+/g, ' ');
+
+      if (!trimmedName) {
+        throw new Error('Space name cannot be empty');
+      }
+
       // Update custom name using StorageManager
-      await this.storageManager.updateSpaceCustomName(spaceId, name);
-      
-      // Reload spaces to get updated data
+      await this.storageManager.updateSpaceCustomName(spaceId, trimmedName);
+
+      // Reload spaces to get updated data from storage
       this.spaces = await this.storageManager.loadSpaces();
       this.closedSpaces = await this.storageManager.loadClosedSpaces();
-      
+
+      // Verify the update was persisted
+      const updatedSpace = this.spaces[spaceId] || this.closedSpaces[spaceId];
+      if (updatedSpace && updatedSpace.customName !== trimmedName) {
+        throw new Error('Failed to persist custom name to storage');
+      }
+
       // Invalidate cache
       this.invalidateCache(`space:${spaceId}`);
       this.invalidateCache('spaces');
       this.invalidateCache('closedSpaces');
-      
+
       this.broadcastStateUpdate();
+
+      console.log(`[StateManager] Successfully renamed space ${spaceId} to "${trimmedName}"`);
     } catch (error) {
-      throw new Error(`Failed to rename space: ${(error as Error).message}`);
+      const errorMessage = `Failed to rename space: ${(error as Error).message}`;
+      console.error(`[StateManager] ${errorMessage}`);
+      throw new Error(errorMessage);
     } finally {
       this.releaseLock(spaceId);
     }

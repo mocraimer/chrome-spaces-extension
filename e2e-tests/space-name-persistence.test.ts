@@ -354,10 +354,10 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await page1.waitForLoadState('networkidle');
 
     let popup = await openExtensionPopup();
-    
+
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
     const spaceItem = popup.locator('[data-testid="space-item"]').first();
-    
+
     // Enter edit mode
     const editButton = spaceItem.locator('button:has-text("Edit")');
     if (await editButton.isVisible()) {
@@ -375,9 +375,310 @@ test.describe('Space Name Persistence E2E Tests', () => {
 
     // Reopen popup
     popup = await openExtensionPopup();
-    
+
     // Edit mode should not persist (should be in display mode)
     await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
     await expect(popup.locator('[data-testid="space-name-input"]')).not.toBeVisible();
+  });
+
+  // =================================================================
+  // ENHANCED PERSISTENCE SCENARIOS FOR STABILITY TESTING
+  // =================================================================
+
+  test('should persist space names during memory pressure scenarios', async () => {
+    // Create multiple spaces to simulate memory pressure
+    const memoryTestSpaces = [];
+
+    for (let i = 1; i <= 10; i++) {
+      const page = await context.newPage();
+      await page.goto(`https://example.com/memory-test-${i}`);
+      await page.waitForLoadState('networkidle');
+      memoryTestSpaces.push(page);
+
+      // Name every other space
+      if (i % 2 === 0) {
+        const popup = await openExtensionPopup();
+        const spaceItem = popup.locator('[data-testid="space-item"]').last();
+
+        const editButton = spaceItem.locator('button:has-text("Edit")');
+        if (await editButton.isVisible()) {
+          await editButton.click();
+        } else {
+          await spaceItem.locator('.space-name').dblclick();
+        }
+
+        const nameInput = popup.locator('[data-testid="space-name-input"]');
+        await nameInput.fill(`Memory Test Space ${i}`);
+        await nameInput.press('Enter');
+        await popup.close();
+      }
+    }
+
+    // Simulate memory pressure by rapidly opening/closing many tabs
+    for (let i = 0; i < 20; i++) {
+      const tempPage = await context.newPage();
+      await tempPage.goto('https://httpbin.org/delay/1');
+      await tempPage.close();
+    }
+
+    // Verify names are still persistent
+    const verifyPopup = await openExtensionPopup();
+    for (let i = 2; i <= 10; i += 2) {
+      await expect(verifyPopup.locator(`text=Memory Test Space ${i}`)).toBeVisible({ timeout: 5000 });
+    }
+    await verifyPopup.close();
+
+    // Clean up
+    for (const page of memoryTestSpaces) {
+      await page.close();
+    }
+  });
+
+  test('should handle rapid rename operations without data corruption', async () => {
+    // Create a space
+    const page1 = await context.newPage();
+    await page1.goto('https://example.com');
+    await page1.waitForLoadState('networkidle');
+
+    const popup = await openExtensionPopup();
+    const spaceItem = popup.locator('[data-testid="space-item"]').first();
+
+    // Perform rapid rename operations
+    const rapidNames = [
+      'Rapid Test 1',
+      'Rapid Test 2',
+      'Rapid Test 3',
+      'Rapid Test 4',
+      'Final Rapid Name'
+    ];
+
+    for (const name of rapidNames) {
+      // Enter edit mode
+      await spaceItem.focus();
+      await popup.keyboard.press('F2');
+
+      const nameInput = popup.locator('[data-testid="space-name-input"]');
+      await nameInput.waitFor({ state: 'visible', timeout: 3000 });
+      await nameInput.selectAll();
+      await nameInput.fill(name);
+      await nameInput.press('Enter');
+
+      // Brief pause to allow processing
+      await popup.waitForTimeout(200);
+    }
+
+    // Verify final name is correct
+    await expect(popup.locator('text=Final Rapid Name')).toBeVisible({ timeout: 5000 });
+    await popup.close();
+  });
+
+  test('should persist names when spaces are restored multiple times', async () => {
+    // Create and name a space
+    const page1 = await context.newPage();
+    await page1.goto('https://example.com');
+    await page1.waitForLoadState('networkidle');
+
+    let popup = await openExtensionPopup();
+    const spaceItem = popup.locator('[data-testid="space-item"]').first();
+    await spaceItem.focus();
+    await popup.keyboard.press('F2');
+
+    const nameInput = popup.locator('[data-testid="space-name-input"]');
+    await nameInput.fill('Multi-Restore Test Space');
+    await nameInput.press('Enter');
+    await popup.close();
+
+    // Close and restore multiple times
+    for (let i = 1; i <= 5; i++) {
+      console.log(`[Test] Restore cycle ${i}/5`);
+
+      // Close the space
+      await page1.close();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Restore it
+      popup = await openExtensionPopup();
+      const closedSpacesToggle = popup.locator('button:has-text("Closed")');
+      if (await closedSpacesToggle.isVisible()) {
+        await closedSpacesToggle.click();
+      }
+
+      const restoreButton = popup.locator('button:has-text("Restore")').first();
+      if (await restoreButton.isVisible()) {
+        await restoreButton.click();
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Get the restored page
+        const pages = context.pages().filter(p =>
+          p.url().includes('example.com') && !p.isClosed()
+        );
+        if (pages.length > 0) {
+          page1 = pages[0];
+        }
+      }
+
+      await popup.close();
+
+      // Verify name persisted through restore
+      popup = await openExtensionPopup();
+      await expect(popup.locator('text=Multi-Restore Test Space')).toBeVisible({ timeout: 5000 });
+      await popup.close();
+    }
+  });
+
+  test('should maintain name consistency across browser extension updates', async () => {
+    // Create and name spaces
+    const testSpaces = [
+      { url: 'https://example.com', name: 'Update Test 1' },
+      { url: 'https://github.com', name: 'Update Test 2' },
+      { url: 'https://stackoverflow.com', name: 'Update Test 3' }
+    ];
+
+    for (const space of testSpaces) {
+      const page = await context.newPage();
+      await page.goto(space.url);
+      await page.waitForLoadState('networkidle');
+
+      const popup = await openExtensionPopup();
+      const spaceItem = popup.locator('[data-testid="space-item"]').last();
+      await spaceItem.focus();
+      await popup.keyboard.press('F2');
+
+      const nameInput = popup.locator('[data-testid="space-name-input"]');
+      await nameInput.fill(space.name);
+      await nameInput.press('Enter');
+      await popup.close();
+    }
+
+    // Verify all names before "update" simulation
+    const preUpdatePopup = await openExtensionPopup();
+    for (const space of testSpaces) {
+      await expect(preUpdatePopup.locator(`text=${space.name}`)).toBeVisible({ timeout: 5000 });
+    }
+    await preUpdatePopup.close();
+
+    // Simulate extension reload/update by restarting context
+    await context.close();
+
+    context = await chromium.launchPersistentContext('', {
+      headless: true,
+      args: [
+        `--disable-extensions-except=${pathToExtension}`,
+        `--load-extension=${pathToExtension}`,
+        '--no-sandbox',
+        '--disable-web-security',
+      ],
+    });
+
+    let [background] = context.serviceWorkers();
+    if (!background) {
+      background = await context.waitForEvent('serviceworker');
+    }
+    extensionId = background.url().split('/')[2];
+
+    // Allow extension to reinitialize
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Verify names survived the "update"
+    const postUpdatePopup = await openExtensionPopup();
+    for (const space of testSpaces) {
+      await expect(postUpdatePopup.locator(`text=${space.name}`)).toBeVisible({
+        timeout: 10000
+      });
+      console.log(`[Test] ✅ Space name "${space.name}" survived extension update`);
+    }
+    await postUpdatePopup.close();
+  });
+
+  test('should handle name persistence with special storage conditions', async () => {
+    // Create a space with a complex name
+    const page1 = await context.newPage();
+    await page1.goto('https://example.com');
+    await page1.waitForLoadState('networkidle');
+
+    const popup = await openExtensionPopup();
+    const spaceItem = popup.locator('[data-testid="space-item"]').first();
+    await spaceItem.focus();
+    await popup.keyboard.press('F2');
+
+    // Test persistence with complex name containing special characters
+    const complexName = '🚀 Project "Alpha-β" [v2.1] {Dev/Test} @2024 💻';
+    const nameInput = popup.locator('[data-testid="space-name-input"]');
+    await nameInput.fill(complexName);
+    await nameInput.press('Enter');
+
+    await expect(popup.locator(`text=${complexName}`)).toBeVisible({ timeout: 5000 });
+    await popup.close();
+
+    // Force storage sync by performing multiple operations
+    for (let i = 0; i < 5; i++) {
+      const tempPage = await context.newPage();
+      await tempPage.goto(`https://httpbin.org/delay/1`);
+      await tempPage.close();
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Verify complex name persisted
+    const verifyPopup = await openExtensionPopup();
+    await expect(verifyPopup.locator(`text=${complexName}`)).toBeVisible({ timeout: 5000 });
+    await verifyPopup.close();
+
+    console.log(`[Test] ✅ Complex name with special characters persisted: "${complexName}"`);
+  });
+
+  test('should maintain persistence during concurrent storage operations', async () => {
+    // Create multiple spaces
+    const concurrentSpaces = [];
+    for (let i = 1; i <= 5; i++) {
+      const page = await context.newPage();
+      await page.goto(`https://example.com/concurrent-${i}`);
+      await page.waitForLoadState('networkidle');
+      concurrentSpaces.push({ page, name: `Concurrent Space ${i}` });
+    }
+
+    // Open multiple popups and rename simultaneously
+    const renamePromises = concurrentSpaces.map(async (space, index) => {
+      const popup = await openExtensionPopup();
+
+      // Wait for spaces to load
+      await popup.waitForSelector('[data-testid="space-item"]', { timeout: 10000 });
+      const spaceItems = popup.locator('[data-testid="space-item"]');
+      const spaceItem = spaceItems.nth(index);
+
+      if (await spaceItem.isVisible()) {
+        await spaceItem.focus();
+        await popup.keyboard.press('F2');
+
+        const nameInput = popup.locator('[data-testid="space-name-input"]');
+        if (await nameInput.isVisible()) {
+          await nameInput.fill(space.name);
+          await nameInput.press('Enter');
+
+          // Verify rename in this popup
+          await expect(popup.locator(`text=${space.name}`)).toBeVisible({ timeout: 3000 });
+        }
+      }
+
+      await popup.close();
+    });
+
+    // Execute all renames concurrently
+    await Promise.all(renamePromises);
+
+    // Wait for storage operations to complete
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Verify all names persisted correctly
+    const finalPopup = await openExtensionPopup();
+    for (const space of concurrentSpaces) {
+      await expect(finalPopup.locator(`text=${space.name}`)).toBeVisible({ timeout: 5000 });
+      console.log(`[Test] ✅ Concurrent rename persisted: "${space.name}"`);
+    }
+    await finalPopup.close();
+
+    // Clean up
+    for (const space of concurrentSpaces) {
+      await space.page.close();
+    }
   });
 });

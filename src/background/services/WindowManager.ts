@@ -14,63 +14,19 @@ export class WindowManager implements IWindowManager {
 
     return executeChromeApi(
       async () => {
-        let createdWindow: chrome.windows.Window | undefined;
-        
-        try {
-          // Create window with first URL and specified options
-          createdWindow = await chrome.windows.create({
-            ...options,
-            url: urls[0],
-            focused: options.focused ?? true
-          });
+        // Create window with all URLs at once - Chrome handles multiple tabs automatically
+        const createdWindow = await chrome.windows.create({
+          ...options,
+          url: urls, // Pass entire URLs array - Chrome creates all tabs
+          focused: options.focused ?? true
+        });
 
-          if (!createdWindow.id) {
-            throw new Error('Failed to create window: no window ID returned');
-          }
-
-          // Add remaining URLs as tabs in batches to prevent overwhelming the browser
-          if (urls.length > 1) {
-            const batchSize = 5;
-            for (let i = 1; i < urls.length; i += batchSize) {
-              const batch = urls.slice(i, i + batchSize);
-              const windowId = createdWindow?.id;
-              
-              if (!windowId) {
-                throw new Error('Window reference lost during tab creation');
-              }
-              
-              await Promise.all(
-                batch.map(url =>
-                  chrome.tabs.create({
-                    windowId,
-                    url,
-                    active: false
-                  })
-                )
-              );
-              // Small delay between batches
-              if (i + batchSize < urls.length) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-              }
-            }
-          }
-
-          // Get updated window state with all tabs
-          if (!createdWindow || !createdWindow.id) {
-            throw new Error('Window reference lost after tab creation');
-          }
-          return await this.getWindow(createdWindow.id);
-        } catch (error) {
-          // If window was created but tab creation failed, attempt cleanup
-          if (createdWindow?.id) {
-            try {
-              await this.closeWindow(createdWindow.id);
-            } catch (cleanupError) {
-              console.error('Failed to cleanup window after tab creation error:', cleanupError);
-            }
-          }
-          throw error;
+        if (!createdWindow?.id) {
+          throw new Error('Failed to create window: no window ID returned');
         }
+
+        // Get updated window state with all populated tabs
+        return await this.getWindow(createdWindow.id);
       },
       'WINDOW_ERROR'
     );

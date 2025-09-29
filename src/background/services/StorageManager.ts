@@ -84,6 +84,12 @@ export class StorageManager implements IStorageManager {
         await chrome.storage.local.set({
           [STORAGE_KEY]: storage
         });
+
+        // Verify the write was successful by reading back
+        const verification = await chrome.storage.local.get(STORAGE_KEY);
+        if (!verification[STORAGE_KEY] || verification[STORAGE_KEY].lastModified !== storage.lastModified) {
+          throw new Error('Storage verification failed - data was not persisted correctly');
+        }
       },
       'STORAGE_ERROR'
     );
@@ -206,22 +212,31 @@ export class StorageManager implements IStorageManager {
    */
   async updateSpaceCustomName(spaceId: string, customName: string): Promise<void> {
     const storage = await this.loadStorage();
-    
+
     // Update in active spaces
     if (storage.spaces[spaceId]) {
       storage.spaces[spaceId].customName = customName;
+      storage.spaces[spaceId].name = customName; // Keep name field in sync
       storage.spaces[spaceId].named = true;
       storage.spaces[spaceId].lastModified = Date.now();
+      storage.spaces[spaceId].version = (storage.spaces[spaceId].version || 1) + 1;
     }
-    
+
     // Update in closed spaces
     if (storage.closedSpaces[spaceId]) {
       storage.closedSpaces[spaceId].customName = customName;
+      storage.closedSpaces[spaceId].name = customName; // Keep name field in sync
       storage.closedSpaces[spaceId].named = true;
       storage.closedSpaces[spaceId].lastModified = Date.now();
+      storage.closedSpaces[spaceId].version = (storage.closedSpaces[spaceId].version || 1) + 1;
     }
-    
-    await this.saveStorage(storage);
+
+    // Add error handling for storage operation
+    try {
+      await this.saveStorage(storage);
+    } catch (error) {
+      throw new Error(`Failed to save custom name to storage: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**

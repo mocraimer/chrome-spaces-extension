@@ -54,16 +54,6 @@ const config: import('webpack').Configuration = {
       filename: 'options.html',
       chunks: ['options'],
     }),
-    new HtmlWebpackPlugin({
-      template: path.join(__dirname, 'src/devtools/performance-panel.html'),
-      filename: 'devtools/performance-panel.html',
-      chunks: ['options'],
-    }),
-    new HtmlWebpackPlugin({
-      template: path.join(__dirname, 'src/devtools/devtools.html'),
-      filename: 'devtools/devtools.html',
-      chunks: ['options'],
-    }),
     new CopyPlugin({
       patterns: [
         { from: 'manifest.json', to: '.' },

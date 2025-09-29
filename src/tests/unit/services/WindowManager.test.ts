@@ -28,7 +28,17 @@ describe('WindowManager', () => {
       await windowManager.createWindow(urls);
 
       expect(mockChrome.windows.create).toHaveBeenCalledWith({
-        url: urls[0],
+        url: urls, // Now passes entire URLs array
+        focused: true
+      });
+    });
+
+    it('should create a new window with multiple tabs', async () => {
+      const urls = ['https://example.com', 'https://google.com', 'https://github.com'];
+      await windowManager.createWindow(urls);
+
+      expect(mockChrome.windows.create).toHaveBeenCalledWith({
+        url: urls, // Passes entire URLs array for multiple tabs
         focused: true
       });
     });

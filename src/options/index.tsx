@@ -65,11 +65,18 @@ const App: React.FC = () => (
 
 const container = document.getElementById('root');
 if (!container) {
-  throw new Error('Root element not found');
+  console.warn('Root element not found - this may be normal if not on the options page');
+  // Only throw error if we're actually on the options page
+  if (window.location.pathname.includes('options.html')) {
+    console.error('Failed to find root element on options page');
+    throw new Error('Root element not found');
+  }
+  // Gracefully exit if we're not on the options page
+  console.log('Skipping React initialization - not on options page');
+} else {
+  const root = createRoot(container);
+  root.render(<App />);
 }
-
-const root = createRoot(container);
-root.render(<App />);
 
 // Basic styles
 const styles = `

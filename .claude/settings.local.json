@@ -17,7 +17,21 @@
       "Bash(mkdir:*)",
       "Bash(sed:*)",
       "Bash(timeout 60 npm run test:bdd:smoke)",
-      "Bash(npx playwright:*)"
+      "Bash(npx playwright:*)",
+      "Bash(npm run watch:*)",
+      "Bash(xvfb-run npm run test:e2e:*)",
+      "Bash(for:*)",
+      "Bash(do)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(CHROMIUM_DEBUG=1 npx playwright test e2e-tests/extension-minimal.test.ts --reporter=list)",
+      "Bash(do echo \"=== Test Run $i ===\")",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__new_page",
+      "WebSearch",
+      "WebFetch(domain:developer.chrome.com)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run:*)"
     ],
     "deny": []
   }

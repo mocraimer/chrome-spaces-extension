@@ -7,7 +7,10 @@ import {
   createAction,
   createAsyncAction,
   FetchSpacesResponse,
-  isAsyncAction
+  isAsyncAction,
+  OptimisticUpdate,
+  ActionQueue,
+  debounce
 } from '../types';
 
 // Initial state
@@ -19,7 +22,13 @@ const initialState: SpacesState = {
   error: null,
   selectedSpaceId: null,
   searchQuery: '',
-  editMode: false
+  editMode: false,
+  // Optimization features
+  optimisticUpdates: {},
+  actionQueue: [],
+  lastSyncTimestamp: 0,
+  syncInProgress: false,
+  operationErrors: {}
 };
 
 // Action Types
@@ -35,10 +44,24 @@ export const CLEAR_ERROR = 'spaces/clearError';
 export const SET_SEARCH = 'spaces/setSearch';
 export const TOGGLE_EDIT_MODE = 'spaces/toggleEditMode';
 export const UPDATE_SPACE_NAME = 'spaces/updateSpaceName';
+export const ADD_OPTIMISTIC_UPDATE = 'spaces/addOptimisticUpdate';
+export const REMOVE_OPTIMISTIC_UPDATE = 'spaces/removeOptimisticUpdate';
+export const ROLLBACK_OPTIMISTIC_UPDATE = 'spaces/rollbackOptimisticUpdate';
+export const ADD_TO_ACTION_QUEUE = 'spaces/addToActionQueue';
+export const REMOVE_FROM_ACTION_QUEUE = 'spaces/removeFromActionQueue';
+export const SET_OPERATION_ERROR = 'spaces/setOperationError';
+export const CLEAR_OPERATION_ERROR = 'spaces/clearOperationError';
 
 export const setSearch = createAction<string>(SET_SEARCH);
 export const toggleEditMode = createAction(TOGGLE_EDIT_MODE);
 export const updateSpaceName = createAction<{ id: string; name: string }>(UPDATE_SPACE_NAME);
+export const addOptimisticUpdate = createAction<OptimisticUpdate>(ADD_OPTIMISTIC_UPDATE);
+export const removeOptimisticUpdate = createAction<string>(REMOVE_OPTIMISTIC_UPDATE);
+export const rollbackOptimisticUpdate = createAction<string>(ROLLBACK_OPTIMISTIC_UPDATE);
+export const addToActionQueue = createAction<ActionQueue>(ADD_TO_ACTION_QUEUE);
+export const removeFromActionQueue = createAction<string>(REMOVE_FROM_ACTION_QUEUE);
+export const setOperationError = createAction<{ id: string; error: string }>(SET_OPERATION_ERROR);
+export const clearOperationError = createAction<string>(CLEAR_OPERATION_ERROR);
 
 // Sync Action Creators
 export const setCurrentWindow = createAction<string>(SET_CURRENT_WINDOW);
@@ -56,7 +79,8 @@ export const fetchSpaces = createAsyncAction(
   }
 );
 
-export const renameSpace = createAsyncAction(
+// Enhanced rename with optimistic updates and retry logic
+export const renameSpaceOptimistic = createAsyncAction(
   RENAME_SPACE,
   async ({ windowId, name }: { windowId: number; name: string }) => {
     await chrome.runtime.sendMessage({
@@ -67,6 +91,9 @@ export const renameSpace = createAsyncAction(
     return { windowId: windowId.toString(), name };
   }
 );
+
+// Keep original action for backward compatibility
+export const renameSpace = renameSpaceOptimistic;
 
 export const closeSpace = createAsyncAction(
   CLOSE_SPACE,
@@ -164,6 +191,149 @@ export default function spacesReducer(
       return state;
     }
 
+    case ADD_OPTIMISTIC_UPDATE: {
+      const update = action.payload;
+      const updatedState = { ...state, optimisticUpdates: { ...state.optimisticUpdates, [update.id]: update } };
+
+      // Apply optimistic change based on type
+      switch (update.type) {
+        case 'rename': {
+          const { spaceId, name } = update.payload;
+          const space = updatedState.spaces[spaceId] || updatedState.closedSpaces[spaceId];
+          if (space) {
+            const targetCollection = updatedState.spaces[spaceId] ? 'spaces' : 'closedSpaces';
+            updatedState[targetCollection] = {
+              ...updatedState[targetCollection],
+              [spaceId]: {
+                ...space,
+                name,
+                customName: name,
+                named: true,
+                lastModified: Date.now()
+              }
+            };
+          }
+          break;
+        }
+        case 'close': {
+          const { windowId } = update.payload;
+          const spaceId = windowId.toString();
+          const space = updatedState.spaces[spaceId];
+          if (space) {
+            const { [spaceId]: closedSpace, ...remainingSpaces } = updatedState.spaces;
+            updatedState.spaces = remainingSpaces;
+            updatedState.closedSpaces = {
+              ...updatedState.closedSpaces,
+              [spaceId]: {
+                ...closedSpace,
+                windowId: undefined,
+                isActive: false,
+                lastModified: Date.now()
+              }
+            };
+          }
+          break;
+        }
+        case 'restore': {
+          const { spaceId } = update.payload;
+          const space = updatedState.closedSpaces[spaceId];
+          if (space) {
+            const { [spaceId]: restoredSpace, ...remainingClosed } = updatedState.closedSpaces;
+            updatedState.closedSpaces = remainingClosed;
+            updatedState.spaces = {
+              ...updatedState.spaces,
+              [spaceId]: {
+                ...restoredSpace,
+                isActive: true,
+                lastModified: Date.now()
+              }
+            };
+          }
+          break;
+        }
+      }
+
+      return updatedState;
+    }
+
+    case REMOVE_OPTIMISTIC_UPDATE: {
+      const updateId = action.payload;
+      const { [updateId]: removed, ...remainingUpdates } = state.optimisticUpdates;
+      return {
+        ...state,
+        optimisticUpdates: remainingUpdates
+      };
+    }
+
+    case ROLLBACK_OPTIMISTIC_UPDATE: {
+      const updateId = action.payload;
+      const update = state.optimisticUpdates[updateId];
+      if (!update) return state;
+
+      const { [updateId]: removed, ...remainingUpdates } = state.optimisticUpdates;
+      let updatedState = { ...state, optimisticUpdates: remainingUpdates };
+
+      // Rollback the optimistic change
+      switch (update.type) {
+        case 'rename': {
+          const { spaceId } = update.payload;
+          const { name, customName } = update.rollbackData;
+          const space = updatedState.spaces[spaceId] || updatedState.closedSpaces[spaceId];
+          if (space) {
+            const targetCollection = updatedState.spaces[spaceId] ? 'spaces' : 'closedSpaces';
+            updatedState[targetCollection] = {
+              ...updatedState[targetCollection],
+              [spaceId]: {
+                ...space,
+                name,
+                customName,
+                named: !!customName
+              }
+            };
+          }
+          break;
+        }
+      }
+
+      return updatedState;
+    }
+
+    case ADD_TO_ACTION_QUEUE: {
+      const queueItem = action.payload;
+      return {
+        ...state,
+        actionQueue: [...state.actionQueue, queueItem]
+      };
+    }
+
+    case REMOVE_FROM_ACTION_QUEUE: {
+      const itemId = action.payload;
+      return {
+        ...state,
+        actionQueue: state.actionQueue.filter(item => item.id !== itemId)
+      };
+    }
+
+    case SET_OPERATION_ERROR: {
+      const { id, error } = action.payload;
+      return {
+        ...state,
+        operationErrors: {
+          ...state.operationErrors,
+          [id]: error
+        }
+      };
+    }
+
+    case CLEAR_OPERATION_ERROR: {
+      const errorId = action.payload;
+      const { [errorId]: removed, ...remainingErrors } = state.operationErrors;
+      return {
+        ...state,
+        operationErrors: remainingErrors
+      };
+    }
+
     case `${FETCH_SPACES}/pending`:
       return {
         ...state,
@@ -196,7 +366,10 @@ export default function spacesReducer(
             [windowId]: {
               ...state.spaces[windowId],
               name,
-              lastModified: Date.now()
+              customName: name, // Keep customName in sync
+              named: true,
+              lastModified: Date.now(),
+              version: (state.spaces[windowId].version || 1) + 1
             }
           }
         };
