@@ -4,7 +4,7 @@ import { TextEncoder, TextDecoder } from 'util';
 import type { RootState } from '../popup/store/types';
 import { mockSpaces, mockClosedSpaces } from './mocks/mockTypes';
 
-global.TextEncoder = TextEncoder;
+global.TextEncoder = TextEncoder as any;
 global.TextDecoder = TextDecoder as any;
 
 // Mock Chrome API
@@ -70,7 +70,7 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 // Mock IntersectionObserver
-(global as any).IntersectionObserver = jest.fn().mockImplementation((callback, options) => ({
+(global as any).IntersectionObserver = jest.fn().mockImplementation((_callback, _options) => ({
   observe: jest.fn(),
   disconnect: jest.fn(),
   unobserve: jest.fn(),
@@ -99,7 +99,12 @@ jest.mock('../popup/store', () => ({
       error: null,
       selectedSpaceId: '1',
       searchQuery: '',
-      editMode: false
+      editMode: false,
+      optimisticUpdates: {},
+      actionQueue: [],
+      lastSyncTimestamp: Date.now(),
+      syncInProgress: false,
+      operationErrors: {}
     }
   }))
 }));

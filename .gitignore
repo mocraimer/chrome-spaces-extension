@@ -31,6 +31,12 @@ yarn-error.log*
 playwright-report/data/d606c7545cd71c2b0c27d9f99edbad4fa39f1174.png
 playwright-report/
 test-results/
+
+# Test artifacts and temporary files
+test-spaces-*/
+e2e-tests/stability-test-results/
+cucumber-report.html
+*.png
 test-results/enhanced-popup-Enhanced-Po-ac2c3--auto-focuses-on-popup-open-chromium/test-failed-1.png
 test-results/enhanced-popup-Enhanced-Po-ac2c3--auto-focuses-on-popup-open-chromium/test-failed-2.png
 test-results/enhanced-popup-Enhanced-Po-ac2c3--auto-focuses-on-popup-open-chromium/test-failed-3.png

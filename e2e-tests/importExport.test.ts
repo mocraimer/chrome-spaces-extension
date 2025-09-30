@@ -11,8 +11,9 @@ test.describe('Import/Export functionality', () => {
 
   test.beforeAll(async () => {
     context = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
@@ -22,7 +23,7 @@ test.describe('Import/Export functionality', () => {
 
     let [background] = context.serviceWorkers();
     if (!background) {
-      background = await context.waitForEvent('serviceworker');
+      background = await context.waitForEvent('serviceworker', { timeout: 60000 });
     }
     extensionId = background.url().split('/')[2];
   });

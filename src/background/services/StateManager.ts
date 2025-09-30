@@ -98,6 +98,29 @@ export class StateManager implements IStateManager {
 
     this.spaces = await this.storageManager.loadSpaces();
     this.closedSpaces = await this.storageManager.loadClosedSpaces();
+
+    // CRITICAL FIX: Reset all active states on startup
+    // This ensures no stale active states persist across Chrome restarts
+    console.log('[StateManager] Resetting active states on startup');
+    const updatedSpaces: Record<string, Space> = {};
+    for (const [spaceId, space] of Object.entries(this.spaces)) {
+      updatedSpaces[spaceId] = {
+        ...space,
+        isActive: false, // Reset to false, synchronization will set true if valid
+        windowId: undefined, // Clear any stale window associations
+        lastSync: Date.now()
+      };
+    }
+
+    // Update in-memory state
+    this.spaces = updatedSpaces;
+
+    // Save the reset state to storage immediately
+    if (Object.keys(updatedSpaces).length > 0) {
+      await this.storageManager.saveSpaces(this.spaces);
+      console.log(`[StateManager] Reset ${Object.keys(updatedSpaces).length} spaces to inactive state`);
+    }
+
     this.initialized = true;
   }
 
@@ -286,6 +309,25 @@ export class StateManager implements IStateManager {
   }
 
   async handleShutdown(): Promise<void> {
+    console.log('[StateManager] handleShutdown called - marking all spaces as inactive');
+
+    // CRITICAL FIX: Mark all spaces as inactive before shutdown
+    // This prevents stale active states from persisting across Chrome restarts
+    const updatedSpaces: Record<string, Space> = {};
+    for (const [spaceId, space] of Object.entries(this.spaces)) {
+      updatedSpaces[spaceId] = {
+        ...space,
+        isActive: false,
+        windowId: undefined, // Clear window association
+        lastModified: Date.now(),
+        version: space.version + 1
+      };
+    }
+
+    // Save the inactive state to storage
+    this.spaces = updatedSpaces;
+    await this.storageManager.saveSpaces(this.spaces);
+
     // Clean up broadcast timeout on shutdown
     if (this.broadcastTimeoutId) {
       clearTimeout(this.broadcastTimeoutId);
@@ -295,7 +337,32 @@ export class StateManager implements IStateManager {
     // Send final broadcast before shutdown
     this.broadcastStateUpdate();
 
-    await this.synchronizeWindowsAndSpaces();
+    // No need to synchronize after marking everything inactive
+    console.log('[StateManager] All spaces marked as inactive for shutdown');
+  }
+
+  /**
+   * Validates if a window actually belongs to a space by comparing URLs
+   * This prevents window ID reuse from incorrectly activating closed spaces
+   */
+  private async validateWindowOwnership(space: Space, window: chrome.windows.Window): Promise<boolean> {
+    if (!window.id) return false;
+
+    // Get current window tabs
+    const tabs = await this.tabManager.getTabs(window.id);
+    const currentUrls = tabs.map(tab => this.tabManager.getTabUrl(tab));
+
+    // If window has no tabs or space has no URLs, can't validate
+    if (currentUrls.length === 0 || !space.urls || space.urls.length === 0) {
+      return false;
+    }
+
+    // Simple validation: check if at least 50% of URLs match
+    // This handles cases where some tabs might have changed
+    const matchingUrls = currentUrls.filter(url => space.urls.includes(url));
+    const matchPercentage = matchingUrls.length / Math.max(currentUrls.length, space.urls.length);
+
+    return matchPercentage >= 0.5;
   }
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 3000)
@@ -318,6 +385,20 @@ export class StateManager implements IStateManager {
         this.spaces[spaceId] ?? this.closedSpaces[spaceId] ?? null;
 
       if (existingSpace) {
+        // CRITICAL FIX: Don't sync closed spaces with open windows
+        // This prevents window ID reuse from reactivating closed spaces
+        if (this.closedSpaces[existingSpace.id]) {
+          console.log(`[StateManager] Skipping closed space ${existingSpace.id} - window ID reused`);
+          continue;
+        }
+
+        // Validate that this window actually belongs to the space
+        const isValidWindow = await this.validateWindowOwnership(existingSpace, window);
+        if (!isValidWindow) {
+          console.log(`[StateManager] Window ${window.id} doesn't belong to space ${existingSpace.id} - window ID reused`);
+          continue;
+        }
+
         // Update existing space with current window state
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
@@ -326,7 +407,7 @@ export class StateManager implements IStateManager {
           ...existingSpace,
           urls, // Update URLs from current tabs
           windowId: window.id, // Update current window ID
-          isActive: true, // Mark as active since window exists
+          isActive: true, // FIXED: Only mark as active if we reach this point (valid window)
           sourceWindowId: spaceId, // Update source window ID
           lastModified: Date.now(),
           lastSync: Date.now(),

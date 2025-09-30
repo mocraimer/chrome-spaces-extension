@@ -9,8 +9,9 @@ test.describe('Popup Loading Tests', () => {
   test.beforeAll(async () => {
     const pathToExtension = path.join(__dirname, '..', 'build');
     context = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',

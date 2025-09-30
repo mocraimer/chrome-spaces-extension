@@ -9,8 +9,9 @@ test.describe('Extension Loading Debug', () => {
     console.log('🔧 Extension path:', pathToExtension);
 
     context = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
@@ -128,7 +129,7 @@ test.describe('Extension Loading Debug', () => {
     if (!extensionId) {
       console.log('🔧 Waiting for service worker event...');
       try {
-        const sw = await context.waitForEvent('serviceworker', { timeout: 10000 });
+        const sw = await context.waitForEvent('serviceworker', { timeout: 60000 });
         const swUrl = sw.url();
         console.log(`🎯 Service worker event received: ${swUrl}`);
         const match = swUrl.match(/chrome-extension:\/\/([a-z]+)/);

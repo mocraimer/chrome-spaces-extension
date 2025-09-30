@@ -1,29 +1,14 @@
-import { test, expect, chromium, BrowserContext, Page } from '@playwright/test';
-import path from 'path';
+import { test, expect, BrowserContext, Page } from '@playwright/test';
+import { setupExtensionContext } from './helpers/test-setup';
 
 test.describe('Enhanced Popup Tests', () => {
   let context: BrowserContext;
   let extensionId: string;
 
   test.beforeAll(async () => {
-    const pathToExtension = path.join(__dirname, '..', 'build');
-    context = await chromium.launchPersistentContext('', {
-      headless: true,
-      args: [
-        `--disable-extensions-except=${pathToExtension}`,
-        `--load-extension=${pathToExtension}`,
-        '--no-sandbox',
-        '--disable-web-security',
-      ],
-    });
-
-    let [background] = context.serviceWorkers();
-    if (!background) {
-      background = await context.waitForEvent('serviceworker');
-    }
-
-    extensionId = background.url().split('/')[2];
-    console.log('Extension ID:', extensionId);
+    const setup = await setupExtensionContext({ headless: true });
+    context = setup.context;
+    extensionId = setup.extensionId;
   });
 
   test.afterAll(async () => {

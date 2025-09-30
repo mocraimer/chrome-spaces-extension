@@ -9,8 +9,9 @@ test.describe('Space Persistence and Auto-Restore', () => {
   test.beforeAll(async () => {
     // Launch a new browser context with the extension loaded
     browserContext = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
@@ -29,7 +30,7 @@ test.describe('Space Persistence and Auto-Restore', () => {
 
     let [background] = browserContext.serviceWorkers();
     if (!background) {
-      background = await browserContext.waitForEvent('serviceworker');
+      background = await browserContext.waitForEvent('serviceworker', { timeout: 60000 });
     }
     extensionId = background.url().split('/')[2];
   });
@@ -69,7 +70,7 @@ test.describe('Space Persistence and Auto-Restore', () => {
     // Phase 2: Close the browser and reopen it
     await browserContext.close();
     browserContext = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
@@ -90,7 +91,7 @@ test.describe('Space Persistence and Auto-Restore', () => {
     // Re-establish the extensionId
     let [background] = browserContext.serviceWorkers();
     if (!background) {
-      background = await browserContext.waitForEvent('serviceworker');
+      background = await browserContext.waitForEvent('serviceworker', { timeout: 60000 });
     }
     extensionId = background.url().split('/')[2];
 

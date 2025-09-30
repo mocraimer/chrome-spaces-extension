@@ -66,10 +66,10 @@ export class ExtensionWorld extends World implements CustomWorld {
 
     // Find our extension
     const extensionId = await extensionsPage.evaluate(() => {
-      const extensionItems = document.querySelectorAll('extensions-item');
+      const extensionItems = Array.from(document.querySelectorAll('extensions-item'));
       for (const item of extensionItems) {
         const nameEl = item.shadowRoot?.querySelector('#name');
-        if (nameEl?.textContent?.includes('chrome-spaces') || 
+        if (nameEl?.textContent?.includes('chrome-spaces') ||
             nameEl?.textContent?.includes('Chrome Spaces')) {
           return item.getAttribute('id');
         }

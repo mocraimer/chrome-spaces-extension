@@ -9,8 +9,9 @@ test.describe('Simple Extension Verification', () => {
   test.beforeAll(async () => {
     const pathToExtension = path.resolve(__dirname, '..', 'build');
     context = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',

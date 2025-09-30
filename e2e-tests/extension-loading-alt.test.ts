@@ -11,7 +11,7 @@ test.describe('Alternative Extension Loading', () => {
 
     // Try standard browser launch instead of persistent context
     browser = await chromium.launch({
-      headless: false, // Try with headless false first
+      headless: true, // Try with headless false first
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,

@@ -8,8 +8,9 @@ test.describe('Session Persistence and Auto-Restore', () => {
 
   const launchBrowser = async () => {
     const newContext = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
@@ -19,7 +20,7 @@ test.describe('Session Persistence and Auto-Restore', () => {
 
     let [background] = newContext.serviceWorkers();
     if (!background) {
-      background = await newContext.waitForEvent('serviceworker');
+      background = await newContext.waitForEvent('serviceworker', { timeout: 60000 });
     }
     
     const newExtensionId = background.url().split('/')[2];

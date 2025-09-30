@@ -13,8 +13,9 @@ test.describe('Manual Extension Loading', () => {
     const tempUserDataDir = `/tmp/playwright-extension-test-${Date.now()}`;
 
     context = await chromium.launchPersistentContext(tempUserDataDir, {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',

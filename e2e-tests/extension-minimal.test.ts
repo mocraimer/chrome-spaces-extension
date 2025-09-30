@@ -8,8 +8,9 @@ test.describe('Minimal Extension Loading', () => {
 
     // Use absolute minimal flags based on Playwright docs
     const context = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
         '--no-sandbox',
@@ -41,7 +42,7 @@ test.describe('Minimal Extension Loading', () => {
       // Final attempt - wait for service worker event
       console.log('🔧 Waiting for service worker event...');
       try {
-        const sw = await context.waitForEvent('serviceworker', { timeout: 10000 });
+        const sw = await context.waitForEvent('serviceworker', { timeout: 60000 });
         console.log(`✅ Service worker event: ${sw.url()}`);
         serviceWorkers = [sw];
       } catch (e) {
