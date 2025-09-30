@@ -1,90 +1,125 @@
-# Active Context - Refactoring
-Generated: 2024-09-29T13:00:00Z
-Command: /activate-refactor
+# Active Context - Test Failure Remediation
+Generated: 2025-09-30
+Command: Test infrastructure complete, moving to fix application bugs
 
-## Refactoring Goal
-Modernize and optimize the Chrome Spaces extension architecture to address critical performance issues, improve maintainability, and follow modern React/Chrome extension best practices. Primary focus on reducing bundle sizes, decomposing monolithic components, and implementing proper architectural patterns.
+## Current Status
+✅ **E2E Test Infrastructure: COMPLETE**
+- Service worker loading: RESOLVED
+- 422 E2E tests: EXECUTABLE
+- Environment blockers: ELIMINATED
 
-## Current Architecture Analysis
-The extension follows a React + Redux pattern with TypeScript, but has several architectural concerns:
+🎯 **Next Phase: Fix Application Bugs Revealed by Tests**
 
-- **Design patterns in use**: Redux for state management, React functional components, Chrome Extension Manifest V3
-- **Dependencies**: @reduxjs/toolkit, React 18, styled-components, webpack 5
-- **Technical debt identified**:
-  - Monolithic UnifiedPopup component (655 lines)
-  - Inline styles causing CSP issues
-  - Bundle size warnings (popup.js: 348KB, options.js: 479KB)
-  - Mixed component concerns (UI + business logic)
-  - No component composition or reusability
-- **Code quality metrics**: High complexity in main component, style/logic coupling, no error boundaries
+## Problem Statement
+Now that tests are running, they're revealing real application bugs that need fixing. These are NOT environment issues - they are actual bugs in the application code that need to be addressed.
 
-## Target Architecture
-Desired end state following modern React and Chrome extension best practices:
+## Test Failure Categories
 
-- **Improved patterns**: Component composition, custom hooks, error boundaries, code splitting
-- **Dependency simplification**: Extract inline styles, implement lazy loading, optimize bundle splitting
-- **Code organization**: Atomic design methodology, separation of concerns, proper TypeScript interfaces
+### 1. Application Logic Bugs (HIGH PRIORITY)
+**Location**: src/popup/components/
+- **ESC key doesn't clear search** - Feature not implemented
+  - File: SearchInput.tsx:46-51
+  - Need: Add Escape key handler to clear input
+- **Current space highlighting** - CSS/logic issue
+  - File: SpaceItem.tsx or SpaceList.tsx
+  - Need: Fix active space indicator styling
+- **Edit workflows** - Input selectors need adjustment
+  - Multiple files in popup/components/
+  - Need: Fix event handlers and selectors
+- **Double-click editing** - Event handlers need review
+  - File: SpaceItem.tsx or UnifiedSpaceItem.tsx
+  - Need: Implement/fix double-click handlers
 
-## Impact Analysis
-- **Files to modify**: ~15-20 files across popup, options, and shared components
-- **Dependencies affected**: webpack configuration, styled-components usage, Redux store structure
-- **Breaking changes**: None - refactoring will maintain existing functionality
-- **Risk level**: Medium - extensive changes but incremental approach minimizes risk
+### 2. Test Selector Issues (HIGH PRIORITY)
+**Location**: e2e-tests/*.test.ts
+- Tests use `.space-item` but components use `[data-testid="space-item"]`
+- Tests use `.search-input` but need to standardize on data-testid
+- Missing test IDs in components
+- **Action**: Standardize all tests to use data-testid attributes
 
-## Refactoring Plan
-1. **Phase 1: Bundle Optimization** (Critical - addresses webpack warnings)
-   - Implement code splitting with React.lazy()
-   - Extract CSS-in-JS to separate stylesheets
-   - Optimize webpack configuration for Chrome extensions
+### 3. Accessibility Implementation (MEDIUM PRIORITY)
+**Location**: src/popup/components/
+- Missing ARIA attributes (role, aria-label, aria-describedby)
+- Screen reader support incomplete
+- Keyboard navigation gaps (Tab, Shift+Tab, Enter, Space)
+- Focus management needs improvement
+- **Goal**: WCAG 2.1 AA compliance
 
-2. **Phase 2: Component Decomposition** (High Priority)
-   - Extract SpaceItem, SearchInput, ConfirmDialog components
-   - Create custom hooks for business logic (useSpaceManagement, useKeyboardNavigation)
-   - Implement proper TypeScript interfaces
+### 4. Test Performance (LOW PRIORITY)
+**Location**: e2e-tests/*.test.ts
+- Replace `waitForTimeout` with `waitForSelector`
+- Reduce unnecessary navigation
+- Optimize complex flows
+- Better error messages
 
-3. **Phase 3: Architecture Modernization** (Medium Priority)
-   - Add error boundaries
-   - Implement React.memo for performance
-   - Create reusable UI component library
+## Relevant Code Paths
+```
+src/popup/components/
+├── SearchInput.tsx - Lines 46-51 (ESC key handler missing)
+├── SpaceItem.tsx - Double-click editing
+├── UnifiedSpaceItem.tsx - Alternative implementation
+├── SpaceList.tsx - Current space highlighting
+├── UnifiedSpacesList.tsx - Alternative list component
 
-4. **Phase 4: State Management Optimization** (Low Priority)
-   - Evaluate Redux store structure
-   - Implement RTK Query if needed for Chrome API calls
-   - Add proper error handling patterns
+e2e-tests/
+├── enhanced-popup.test.ts - Lines 67-84 (ESC key test)
+├── user-journeys/daily-usage-workflow.test.ts - Edit workflow tests
+├── interaction-flows/double-click-edit-flow.test.ts - Double-click tests
+├── accessibility-ux/*.test.ts - Accessibility test suites
+```
 
-## Recommended Agents
-- **architect-review**: Validate design decisions throughout refactoring
-- **frontend-developer**: Handle React component decomposition and optimization
-- **code-reviewer**: Ensure quality and best practices at each phase
-- **test-automator**: Maintain test coverage during refactoring
+## Investigation Findings
 
-## Safety Measures
-- **Backup strategy**: Git branches for each refactoring phase
-- **Rollback plan**: Each phase creates working checkpoint
-- **Testing approach**: Maintain existing E2E tests, add component unit tests
-- **Deployment strategy**: Test extension loading after each phase
+### Root Causes Identified
+1. **ESC key handler**: SearchInput.tsx has onKeyDown prop but parent doesn't handle Escape
+2. **Test selectors**: Inconsistent use of class names vs data-testid attributes
+3. **Accessibility**: Components missing semantic HTML and ARIA attributes
+4. **Edit workflows**: Event handlers not properly wired up in all components
+
+## Recommended Fix Strategy
+
+### Phase 1: Quick Wins (Application Bugs)
+**Agent**: frontend-developer
+1. Add ESC key handler to clear search (SearchInput.tsx + parent)
+2. Fix current space highlighting CSS
+3. Implement double-click editing handlers
+4. Fix edit workflow selectors
+
+### Phase 2: Test Infrastructure (Selectors)
+**Agent**: test-automator
+1. Add data-testid to all interactive components
+2. Update all tests to use data-testid consistently
+3. Remove hardcoded class name selectors
+4. Verify selector consistency
+
+### Phase 3: Accessibility (Features)
+**Agents**: ui-ux-designer + frontend-developer
+1. Add ARIA attributes to components
+2. Implement screen reader support
+3. Complete keyboard navigation
+4. Focus management improvements
+
+### Phase 4: Performance (Optimization)
+**Agent**: test-automator
+1. Replace hardcoded waits with smart waits
+2. Optimize test flows
+3. Improve error messages
 
 ## Success Criteria
-- Bundle sizes reduced below webpack warning thresholds (<244KB)
-- UnifiedPopup component reduced to <200 lines
-- Component reusability increased (3+ reusable components)
-- Performance metrics maintained or improved
-- No regression in existing functionality
-
-## Refactoring Checklist
-- [ ] Create comprehensive tests before changes
-- [ ] Phase 1: Bundle optimization and code splitting
-- [ ] Phase 2: Extract SpaceItem component
-- [ ] Phase 2: Extract SearchInput component
-- [ ] Phase 2: Extract ConfirmDialog component
-- [ ] Phase 2: Create useSpaceManagement hook
-- [ ] Phase 2: Create useKeyboardNavigation hook
-- [ ] Phase 3: Add error boundaries
-- [ ] Phase 3: Implement React.memo optimizations
-- [ ] Phase 4: State management review
-- [ ] Update documentation
-- [ ] Verify performance improvements
-- [ ] Test extension in Chrome
+- ✅ ESC key clears search input
+- ✅ Current space is visually highlighted
+- ✅ Double-click editing works
+- ✅ Edit workflows pass all tests
+- ✅ All tests use data-testid selectors
+- ✅ WCAG 2.1 AA compliance
+- ✅ Test execution time reduced by 50%
+- ✅ 95%+ test pass rate
 
 ## KISS Reminder
-Refactor in small, testable increments. Focus on one component extraction at a time. Each change should make the code slightly better while maintaining all existing functionality. Start with the highest impact, lowest risk changes first.
+Start with the obvious bugs first. Don't over-engineer. Fix what's broken, then move to enhancements.
+
+## Next Steps
+1. Review SearchInput.tsx and parent components for ESC key handling
+2. Inspect SpaceItem.tsx for double-click and highlighting logic
+3. Run failing tests to understand exact error messages
+4. Fix bugs one at a time, verify with tests after each fix
