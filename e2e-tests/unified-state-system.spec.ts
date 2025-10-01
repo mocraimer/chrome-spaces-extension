@@ -13,8 +13,9 @@ test.describe('Unified State Management System', () => {
     const extensionPath = join(projectRoot, 'build');
 
     context = await chromium.launchPersistentContext('', {
-      headless: true,
+      headless: false,  // Must be false when using --headless=new
       args: [
+        '--headless=new',  // CRITICAL: Use new headless mode for extension support
         `--disable-extensions-except=${extensionPath}`,
         `--load-extension=${extensionPath}`,
         '--no-sandbox',

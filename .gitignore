@@ -63,3 +63,6 @@ CLAUDE.md
 .claude/subagents/test-runner.md
 .claude/subagents/ui-ux-designer.md
 .claude/subagents/
+.test-user-data-simple/
+.test-user-data-persistence/
+.test-user-data-closed-spaces/

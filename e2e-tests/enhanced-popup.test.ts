@@ -6,7 +6,7 @@ test.describe('Enhanced Popup Tests', () => {
   let extensionId: string;
 
   test.beforeAll(async () => {
-    const setup = await setupExtensionContext({ headless: true });
+    const setup = await setupExtensionContext({ headless: false });  // Use new headless mode
     context = setup.context;
     extensionId = setup.extensionId;
   });

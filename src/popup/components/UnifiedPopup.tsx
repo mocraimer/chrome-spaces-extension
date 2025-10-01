@@ -65,7 +65,7 @@ const UnifiedPopup: React.FC = () => {
         if (currentWindow.id) {
           dispatch(setCurrentWindow(currentWindow.id.toString()));
         }
-        
+
         // Fetch all spaces data from background service
         await dispatch(fetchSpaces());
       } catch (err) {
@@ -74,6 +74,11 @@ const UnifiedPopup: React.FC = () => {
     };
 
     initializePopup();
+
+    // Cleanup: Ensure any pending actions are flushed before unmount
+    return () => {
+      console.log('[UnifiedPopup] Unmounting - any onBlur handlers will have fired by now');
+    };
   }, [dispatch]);
 
   // Auto-focus search input

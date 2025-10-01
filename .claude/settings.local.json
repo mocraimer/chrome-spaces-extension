@@ -31,7 +31,22 @@
       "WebSearch",
       "WebFetch(domain:developer.chrome.com)",
       "Bash(npm run typecheck:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(timeout 60 npm run test:stability:restoration)",
+      "mcp__ide__getDiagnostics",
+      "Bash(tee:*)",
+      "Bash(timeout 30 npm test -- --testPathPattern=\"unit/hooks/useHotkeys\" --no-coverage)",
+      "Bash(timeout 30 npx playwright test:*)",
+      "Bash(timeout 60 npm run test:e2e:*)",
+      "Bash(timeout 120 npm test -- --testPathPattern=\"unit\" --maxWorkers=4 --bail=false)",
+      "Bash(timeout 300 npm run test:e2e -- --max-failures=50 --timeout=15000)",
+      "Bash(test:*)",
+      "Bash(timeout 60 npx playwright test:*)",
+      "Read(//tmp/**)",
+      "Bash(timeout 300 npx playwright test:*)",
+      "Bash(timeout 120 npm run test:e2e -- --grep \"space-name-persistence\")",
+      "Bash(timeout 120 npx playwright test:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }

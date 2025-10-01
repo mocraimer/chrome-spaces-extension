@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import { Space } from '../../shared/types/Space';
 import { useAppDispatch } from '../../shared/hooks/storeHooks';
 import { renameSpace, toggleEditMode } from '../store/slices/spacesSlice';
 import { injectSpaceItemStyles } from './SpaceItem.styles';
+import { debounce } from '../../shared/utils';
 
 interface SpaceItemProps {
   space: Space;
@@ -29,10 +30,16 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
   }, []);
 
   const handleSave = async () => {
+    // Don't save if name hasn't changed
+    if (editedName.trim() === space.name.trim()) {
+      dispatch(toggleEditMode());
+      return;
+    }
+
     try {
-      await dispatch(renameSpace({ 
-        windowId: parseInt(space.id), 
-        name: editedName 
+      await dispatch(renameSpace({
+        windowId: parseInt(space.id),
+        name: editedName
       }));
       dispatch(toggleEditMode());
     } catch (error) {
@@ -46,6 +53,27 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
     setEditedName(space.name);
     dispatch(toggleEditMode());
   };
+
+  // Auto-save function that only dispatches rename (without toggling edit mode)
+  const autoSave = useCallback((name: string) => {
+    // Don't save if name hasn't changed
+    if (name.trim() === space.name.trim()) {
+      return;
+    }
+
+    dispatch(renameSpace({
+      windowId: parseInt(space.id),
+      name: name
+    })).catch(error => {
+      console.error('Auto-save failed:', error);
+    });
+  }, [dispatch, space.id, space.name]);
+
+  // Debounced version for auto-save while typing (500ms delay)
+  const debouncedAutoSave = useMemo(
+    () => debounce(autoSave, 500),
+    [autoSave]
+  );
 
   return (
     <div className={`space-info ${!isLoaded ? 'loading' : ''}`} data-testid="space-item">
@@ -66,7 +94,12 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
                   data-testid="space-name-input"
                   className="space-name-input"
                   value={editedName}
-                  onChange={(e) => setEditedName(e.target.value)}
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    setEditedName(newName);
+                    debouncedAutoSave(newName);
+                  }}
+                  onBlur={handleSave}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();

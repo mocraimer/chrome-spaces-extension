@@ -326,7 +326,15 @@ export class StateManager implements IStateManager {
 
     // Save the inactive state to storage
     this.spaces = updatedSpaces;
-    await this.storageManager.saveSpaces(this.spaces);
+
+    // CRITICAL: Save BOTH spaces and closed spaces
+    // Without this, closed spaces are lost during shutdown
+    await Promise.all([
+      this.storageManager.saveSpaces(this.spaces),
+      this.storageManager.saveClosedSpaces(this.closedSpaces),
+    ]);
+
+    console.log('[StateManager] Saved spaces and closed spaces during shutdown');
 
     // Clean up broadcast timeout on shutdown
     if (this.broadcastTimeoutId) {
@@ -339,6 +347,25 @@ export class StateManager implements IStateManager {
 
     // No need to synchronize after marking everything inactive
     console.log('[StateManager] All spaces marked as inactive for shutdown');
+  }
+
+  /**
+   * Force immediate save of all state (spaces and closed spaces)
+   * This is useful during critical operations like browser shutdown
+   * to ensure data is persisted before service worker termination
+   */
+  public async forceSave(): Promise<void> {
+    console.log('[StateManager] forceSave called - saving all state immediately');
+    try {
+      await Promise.all([
+        this.storageManager.saveSpaces(this.spaces),
+        this.storageManager.saveClosedSpaces(this.closedSpaces),
+      ]);
+      console.log('[StateManager] Force save completed successfully');
+    } catch (error) {
+      console.error('[StateManager] Force save failed:', error);
+      throw error;
+    }
   }
 
   /**

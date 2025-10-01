@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useAppSelector, useAppDispatch } from '../../shared/hooks/storeHooks';
 import { renameSpace } from '../store/slices/spacesSlice';
 import type { AppDispatch } from '../../shared/types/store';
+import { debounce } from '../../shared/utils';
 
 export const SpaceHeader: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -30,15 +31,46 @@ export const SpaceHeader: React.FC = () => {
     setIsEditing(true);
   }, []);
 
+  // Auto-save function that only dispatches rename (without closing edit mode)
+  const autoSave = useCallback((name: string) => {
+    if (!currentWindowId || !name.trim()) return;
+
+    // Don't save if name hasn't changed
+    if (currentSpace && name.trim() === currentSpace.name.trim()) {
+      return;
+    }
+
+    dispatch(renameSpace({
+      windowId: Number(currentWindowId),
+      name: name.trim()
+    })).catch(error => {
+      console.error('Auto-save failed:', error);
+    });
+  }, [currentWindowId, currentSpace, dispatch]);
+
+  // Debounced version for auto-save while typing (500ms delay)
+  const debouncedAutoSave = useMemo(
+    () => debounce(autoSave, 500),
+    [autoSave]
+  );
+
   const handleNameChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setEditedName(e.target.value);
+      const newName = e.target.value;
+      setEditedName(newName);
+      debouncedAutoSave(newName);
     },
-    []
+    [debouncedAutoSave]
   );
 
   const handleSubmit = useCallback(async () => {
     if (!currentWindowId || !editedName.trim()) return;
+
+    // Don't save if name hasn't changed
+    if (currentSpace && editedName.trim() === currentSpace.name.trim()) {
+      setIsEditing(false);
+      return;
+    }
 
     try {
       await dispatch(renameSpace({

@@ -129,7 +129,14 @@ class BackgroundService {
 
     // Handle extension suspend/shutdown
     chrome.runtime.onSuspend?.addListener(async () => {
-      await this.stateManager.handleShutdown();
+      console.log('[BackgroundService] Service worker suspending - ensuring all data is saved');
+      try {
+        // handleShutdown now saves both spaces AND closed spaces
+        await this.stateManager.handleShutdown();
+        console.log('[BackgroundService] Shutdown save completed successfully');
+      } catch (error) {
+        console.error('[BackgroundService] Error during shutdown save:', error);
+      }
     });
   }
 
