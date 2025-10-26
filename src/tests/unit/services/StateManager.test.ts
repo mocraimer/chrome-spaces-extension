@@ -22,7 +22,7 @@ describe('StateManager', () => {
   let updateQueue: jest.Mocked<StateUpdateQueue>;
   let broadcastService: jest.Mocked<StateBroadcastService>;
 
-  const createMockSpace = (id: string, name: string, props: Partial<Space> = {}) => ({
+  const createMockSpace = (id: string, name: string, props: Partial<Space> = {}): Space => ({
     id,
     name,
     urls: ['https://example.com'],
@@ -31,6 +31,11 @@ describe('StateManager', () => {
     lastSync: 123456789,
     sourceWindowId: id,
     named: false,
+    permanentId: `perm-${id}`,
+    createdAt: 123456789,
+    lastUsed: 123456789,
+    isActive: true,
+    windowId: Number(id),
     ...props
   });
 
@@ -264,51 +269,84 @@ describe('StateManager', () => {
     };
 
     beforeEach(() => {
-      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      tabManager.getTabs.mockResolvedValue([mockTab]);
       tabManager.getTabUrl.mockReturnValue('https://example.com');
     });
 
-    it('should not recreate closed spaces', async () => {
-      const closedSpace = {
-        id: '1',
-        name: 'Closed Space',
-        urls: ['https://example.com'],
-        lastModified: Date.now()
-      };
-
-      storageManager.loadClosedSpaces.mockResolvedValue({
-        '1': createMockSpace('1', 'Closed Space', {
-          lastModified: Date.now(),
-          version: 2
-        })
+    it('moves orphaned active spaces into closed storage', async () => {
+      const orphanedSpace = createMockSpace('2', 'Orphaned Space', {
+        isActive: true,
+        windowId: 2,
+        sourceWindowId: '2',
+        lastModified: Date.now(),
+        lastSync: Date.now(),
+        version: 3
       });
 
+      windowManager.getAllWindows.mockResolvedValue([]);
+      storageManager.loadSpaces.mockResolvedValue({ '2': orphanedSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      await stateManager.initialize();
       await stateManager.synchronizeWindowsAndSpaces();
 
-      expect(storageManager.saveSpaces).toHaveBeenCalledWith(
-        expect.not.objectContaining({ '1': expect.any(Object) })
-      );
+      expect(storageManager.saveSpaces).toHaveBeenCalledWith({});
       expect(storageManager.saveClosedSpaces).toHaveBeenCalledWith(
-        expect.objectContaining({ '1': expect.any(Object) })
+        expect.objectContaining({
+          '2': expect.objectContaining({
+            isActive: false,
+            windowId: undefined,
+            version: orphanedSpace.version + 1
+          })
+        })
       );
     });
 
-    it('should handle new windows without affecting closed spaces', async () => {
-      const newClosedSpace = createMockSpace('2', 'New Closed Space', {
-        lastModified: Date.now(),
-        version: 1
-      });
-
+    it('creates new space entries for brand-new windows', async () => {
+      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      storageManager.loadSpaces.mockResolvedValue({});
       storageManager.loadClosedSpaces.mockResolvedValue({});
 
+      await stateManager.initialize();
       await stateManager.synchronizeWindowsAndSpaces();
 
       expect(storageManager.saveSpaces).toHaveBeenCalledWith(
-        expect.objectContaining({ '1': expect.any(Object) })
+        expect.objectContaining({
+          '1': expect.objectContaining({
+            id: '1',
+            sourceWindowId: '1',
+            windowId: 1,
+            isActive: true
+          })
+        })
       );
-      expect(storageManager.saveClosedSpaces).toHaveBeenCalledWith(
-        expect.objectContaining({ '2': expect.any(Object) })
+      expect(storageManager.saveClosedSpaces).toHaveBeenCalledWith({});
+    });
+
+    it('reopens previously closed spaces when their window returns', async () => {
+      const closedSpace = createMockSpace('1', 'Closed Space', {
+        isActive: false,
+        windowId: undefined,
+        version: 5
+      });
+
+      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      storageManager.loadSpaces.mockResolvedValue({});
+      storageManager.loadClosedSpaces.mockResolvedValue({ '1': closedSpace });
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      expect(storageManager.saveSpaces).toHaveBeenCalledWith(
+        expect.objectContaining({
+          '1': expect.objectContaining({
+            isActive: true,
+            windowId: 1,
+            version: closedSpace.version + 1
+          })
+        })
       );
+      expect(storageManager.saveClosedSpaces).toHaveBeenCalledWith({});
     });
   });
 

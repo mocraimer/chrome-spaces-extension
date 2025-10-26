@@ -263,43 +263,85 @@ export class StateManager implements IStateManager {
   @PerformanceTrackingService.track(MetricCategories.STATE, 3000)
   async synchronizeWindowsAndSpaces(): Promise<void> {
     const windows = await this.windowManager.getAllWindows();
-    const existingSpaces = { ...this.spaces };
-    const updatedSpaces: Record<string, Space> = {};
+    const now = Date.now();
+    const openWindowIds = new Set<string>();
 
-    // Update spaces based on existing windows
+    const updatedSpaces: Record<string, Space> = {};
+    const updatedClosedSpaces: Record<string, Space> = { ...this.closedSpaces };
+
+    // Reconcile currently open windows with stored spaces
     for (const window of windows) {
       if (!window.id) continue;
 
       const spaceId = window.id.toString();
-      const existingSpace = Object.values(existingSpaces).find(
-        space => space.sourceWindowId === spaceId
-      );
+      openWindowIds.add(spaceId);
+
+      const existingSpace =
+        this.spaces[spaceId] ?? this.closedSpaces[spaceId] ?? null;
 
       if (existingSpace) {
-        // Update existing space
-        updatedSpaces[existingSpace.id] = {
+        const baseVersion = existingSpace.version ?? 0;
+        const reopened = Object.prototype.hasOwnProperty.call(
+          updatedClosedSpaces,
+          spaceId
+        );
+        if (reopened) {
+          delete updatedClosedSpaces[spaceId];
+        }
+
+        updatedSpaces[spaceId] = {
           ...existingSpace,
-          lastModified: Date.now(),
-          version: existingSpace.version + 1
+          id: spaceId,
+          sourceWindowId: spaceId,
+          windowId: window.id,
+          isActive: true,
+          lastSync: now,
+          lastModified: now,
+          lastUsed: now,
+          version: baseVersion + 1
         };
       } else {
-        // Create new space using StorageManager
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
         const name = `${DEFAULT_SPACE_NAME} ${spaceId}`;
         const space = await this.storageManager.createSpace(window.id, name, urls);
-        
-        // Add additional fields for backward compatibility
-        space.lastSync = Date.now();
-        space.sourceWindowId = spaceId;
-        
-        updatedSpaces[spaceId] = space;
+
+        updatedSpaces[spaceId] = {
+          ...space,
+          sourceWindowId: spaceId,
+          windowId: window.id,
+          isActive: true,
+          lastSync: now,
+          lastModified: now,
+          lastUsed: now
+        };
       }
     }
 
-    // Save updated spaces
+    // Move orphaned spaces to closed set
+    for (const [spaceId, space] of Object.entries(this.spaces)) {
+      if (!openWindowIds.has(spaceId)) {
+        const baseVersion = space.version ?? 0;
+        updatedClosedSpaces[spaceId] = {
+          ...space,
+          isActive: false,
+          windowId: undefined,
+          lastModified: now,
+          lastUsed: now,
+          lastSync: now,
+          version: baseVersion + 1
+        };
+      }
+    }
+
     this.spaces = updatedSpaces;
-    await this.storageManager.saveSpaces(this.spaces);
+    this.closedSpaces = updatedClosedSpaces;
+
+    await Promise.all([
+      this.storageManager.saveSpaces(this.spaces),
+      this.storageManager.saveClosedSpaces(this.closedSpaces)
+    ]);
+
     this.broadcastStateUpdate();
   }
 
