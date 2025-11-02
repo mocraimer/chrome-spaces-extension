@@ -2,13 +2,17 @@ import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { fetchSpaces } from '../store/slices/spacesSlice';
 import { MessageTypes } from '@/shared/constants';
+import { store } from '../store';
+
+// Get AppDispatch type from store
+type AppDispatch = typeof store.dispatch;
 
 /**
  * Component that listens to broadcast messages from the background
  * and updates the popup state in real-time
  */
 export const BroadcastListener: React.FC = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
 
   useEffect(() => {
     const handleMessage = (message: any) => {
