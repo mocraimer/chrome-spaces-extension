@@ -5,10 +5,12 @@ import { StateManager } from './services/StateManager';
 import { MessageHandler } from './services/MessageHandler';
 import { StateUpdateQueue } from './services/StateUpdateQueue';
 import { StateBroadcastService } from './services/StateBroadcastService';
+import { RestoreSpaceTransaction } from './services/RestoreSpaceTransaction';
 import { STARTUP_DELAY, RECOVERY_CHECK_DELAY, SETTINGS_KEY } from '@/shared/constants';
 import { SettingsState } from '@/options/store/slices/settingsSlice';
 import { PerformanceMessageHandler } from './services/performance/PerformanceMessageHandler';
 import { PerformanceTrackingService, MetricCategories } from './services/performance/PerformanceTrackingService';
+import { Space } from '@/shared/types/Space';
 
 class BackgroundService {
   private windowManager: WindowManager;
@@ -16,6 +18,7 @@ class BackgroundService {
   private storageManager: StorageManager;
   private stateManager: StateManager;
   private messageHandler: MessageHandler;
+  private restoreTransaction: RestoreSpaceTransaction;
 
   constructor() {
     console.log('[BackgroundService] Constructor called - Initializing background service');
@@ -43,6 +46,13 @@ class BackgroundService {
       updateQueue,
       broadcastService
     );
+
+    this.restoreTransaction = new RestoreSpaceTransaction(
+      this.windowManager,
+      this.stateManager,
+      this.tabManager
+    );
+
     this.messageHandler = new MessageHandler(
       this.windowManager,
       this.tabManager,
@@ -77,8 +87,18 @@ class BackgroundService {
     
     // Listen for extension startup
     chrome.runtime.onStartup.addListener(async () => {
-      console.log('[Startup] Chrome Spaces initializing');
+      console.log('[BackgroundService] ========== onStartup TRIGGERED ==========');
+      console.log('[BackgroundService] Timestamp:', new Date().toISOString());
+      console.log('[Startup] Chrome Spaces initializing after browser restart');
+
+      const startupTime = Date.now();
       await this.handleStartup();
+      const endTime = Date.now();
+
+      console.log('[Startup] ✅ Startup completed', {
+        duration: `${endTime - startupTime}ms`
+      });
+      console.log('[BackgroundService] ========== onStartup COMPLETE ==========');
     });
 
     // Handle installation and updates
@@ -129,14 +149,30 @@ class BackgroundService {
 
     // Handle extension suspend/shutdown
     chrome.runtime.onSuspend?.addListener(async () => {
+      console.log('[BackgroundService] ========== onSuspend TRIGGERED ==========');
+      console.log('[BackgroundService] Timestamp:', new Date().toISOString());
       console.log('[BackgroundService] Service worker suspending - ensuring all data is saved');
+
+      const suspendStartTime = Date.now();
+
       try {
         // handleShutdown now saves both spaces AND closed spaces
+        console.log('[BackgroundService] Calling stateManager.handleShutdown()...');
         await this.stateManager.handleShutdown();
-        console.log('[BackgroundService] Shutdown save completed successfully');
+
+        const suspendEndTime = Date.now();
+        console.log('[BackgroundService] ✅ Shutdown save completed successfully', {
+          duration: `${suspendEndTime - suspendStartTime}ms`
+        });
       } catch (error) {
-        console.error('[BackgroundService] Error during shutdown save:', error);
+        const suspendEndTime = Date.now();
+        console.error('[BackgroundService] ❌ Error during shutdown save:', {
+          error,
+          duration: `${suspendEndTime - suspendStartTime}ms`
+        });
       }
+
+      console.log('[BackgroundService] ========== onSuspend COMPLETE ==========');
     });
   }
 
@@ -148,14 +184,12 @@ class BackgroundService {
       
       // Initialize state
       await this.stateManager.initialize();
-      
-      // Check if auto-restore is enabled
-      const settings = await this.loadSettings();
-      if (settings?.general?.autoRestore) {
-        console.log('[Startup] Auto-restore enabled, restoring spaces');
-        await this.restoreSpaces();
-      }
-      
+
+      // Always restore named spaces - they are meant to persist
+      // Named spaces represent user-defined workspaces that should survive restarts
+      console.log('[Startup] Restoring named spaces...');
+      await this.restoreSpaces();
+
       // Double-check after a delay
       await this.delay(RECOVERY_CHECK_DELAY);
       await this.stateManager.synchronizeWindowsAndSpaces();
@@ -177,29 +211,89 @@ class BackgroundService {
   @PerformanceTrackingService.track(MetricCategories.WINDOW, 5000)
   private async restoreSpaces(): Promise<void> {
     try {
+      console.log('[Restore] ========== RESTORATION START ==========');
+
+      // Get all spaces that should be restored
+      const spacesToRestore: Array<{ id: string; space: Space; source: 'closed' | 'inactive' }> = [];
+
+      // 1. Check closedSpaces for named spaces
       const closedSpaces = await this.stateManager.getClosedSpaces();
-      
-      // Restore each named closed space
+      console.log(`[Restore] Checking closedSpaces: ${Object.keys(closedSpaces).length} total`);
       for (const [id, space] of Object.entries(closedSpaces)) {
+        console.log(`[Restore]   - Closed space ${id}: named=${space.named}, name=${space.name}`);
         if (space.named) {
-          console.log(`[Restore] Restoring space: ${space.name}`);
-          await this.stateManager.restoreSpace(id);
+          spacesToRestore.push({ id, space, source: 'closed' });
         }
       }
+
+      // 2. Check spaces for named inactive spaces
+      const allSpaces = await this.stateManager.getAllSpaces();
+      console.log(`[Restore] Checking spaces: ${Object.keys(allSpaces).length} total`);
+      for (const [id, space] of Object.entries(allSpaces)) {
+        console.log(`[Restore]   - Space ${id}: named=${space.named}, isActive=${space.isActive}, name=${space.name}`);
+        if (space.named && !space.isActive) {
+          spacesToRestore.push({ id, space, source: 'inactive' });
+        }
+      }
+
+      console.log(`[Restore] Found ${spacesToRestore.length} named spaces to restore:`, spacesToRestore.map(s => ({ id: s.id, name: s.space.name, source: s.source })));
+
+      // Restore each named space using RestoreSpaceTransaction
+      // This properly creates windows and restores tabs
+      for (const { id, space, source } of spacesToRestore) {
+        console.log(`[Restore] Restoring ${source} space: ${space.name} (ID: ${id})`);
+        try {
+          await this.restoreTransaction.restore(id);
+          console.log(`[Restore] ✅ Successfully restored space: ${space.name}`);
+
+          // Verify the space was re-keyed
+          const allSpacesAfter = await this.stateManager.getAllSpaces();
+          console.log(`[Restore] After restoration, active spaces:`, Object.keys(allSpacesAfter).map(k => ({ id: k, name: allSpacesAfter[k].name, isActive: allSpacesAfter[k].isActive })));
+        } catch (error) {
+          console.error(`[Restore] ❌ Failed to restore space ${space.name}:`, error);
+        }
+      }
+
+      console.log(`[Restore] ✅ Completed restoration of ${spacesToRestore.length} named spaces`);
+      console.log('[Restore] ========== RESTORATION COMPLETE ==========');
     } catch (error) {
-      console.error('Error restoring spaces:', error);
+      console.error('[Restore] Error restoring spaces:', error);
     }
   }
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   private async handleInstall(details: chrome.runtime.InstalledDetails): Promise<void> {
     try {
+      console.log(`[Install] ========== onInstalled TRIGGERED (reason: ${details.reason}) ==========`);
       await this.stateManager.initialize();
-      
+
       if (details.reason === 'install') {
         await this.delay(STARTUP_DELAY);
         await this.stateManager.synchronizeWindowsAndSpaces();
+      } else {
+        // For updates, browser updates, or when extension reloads in existing profile
+        // Check if there are named spaces that need restoration
+        console.log('[Install] Checking for named spaces to restore...');
+        const allSpaces = await this.stateManager.getAllSpaces();
+        const closedSpaces = await this.stateManager.getClosedSpaces();
+
+        const hasNamedSpaces = Object.values(allSpaces).some(s => s.named) ||
+                               Object.values(closedSpaces).some(s => s.named);
+
+        if (hasNamedSpaces) {
+          console.log('[Install] Found named spaces, triggering restoration...');
+          await this.delay(STARTUP_DELAY);
+          await this.restoreSpaces();
+          await this.delay(RECOVERY_CHECK_DELAY);
+          await this.stateManager.synchronizeWindowsAndSpaces();
+        } else {
+          console.log('[Install] No named spaces found, running normal synchronization...');
+          await this.delay(STARTUP_DELAY);
+          await this.stateManager.synchronizeWindowsAndSpaces();
+        }
       }
+
+      console.log('[Install] ========== onInstalled COMPLETE ==========');
     } catch (error) {
       console.error('Install error:', error);
     }

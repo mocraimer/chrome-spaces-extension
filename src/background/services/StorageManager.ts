@@ -53,8 +53,12 @@ export class StorageManager implements IStorageManager {
       async () => {
         const data = await chrome.storage.local.get(STORAGE_KEY);
         const storedData = data[STORAGE_KEY];
-        
+
+        console.log('[StorageManager] Loading storage from chrome.storage.local');
+        console.log('[StorageManager] Raw storage data:', storedData ? 'exists' : 'null/undefined');
+
         if (!storedData) {
+          console.log('[StorageManager] No stored data found, initiating migration');
           // Check if migration is needed
           return await this.migrateFromLegacyStorage();
         }
@@ -67,6 +71,13 @@ export class StorageManager implements IStorageManager {
           lastModified: storedData.lastModified || Date.now(),
           version: storedData.version || CURRENT_STORAGE_VERSION
         };
+
+        console.log('[StorageManager] Loaded storage:', {
+          activeSpacesCount: Object.keys(storage.spaces).length,
+          closedSpacesCount: Object.keys(storage.closedSpaces).length,
+          lastModified: new Date(storage.lastModified).toISOString(),
+          version: storage.version
+        });
 
         return storage;
       },
@@ -81,15 +92,34 @@ export class StorageManager implements IStorageManager {
     await executeChromeApi(
       async () => {
         storage.lastModified = Date.now();
+
+        console.log('[StorageManager] Saving storage to chrome.storage.local:', {
+          activeSpacesCount: Object.keys(storage.spaces).length,
+          closedSpacesCount: Object.keys(storage.closedSpaces).length,
+          lastModified: new Date(storage.lastModified).toISOString(),
+          version: storage.version,
+          activeSpaceIds: Object.keys(storage.spaces),
+          closedSpaceIds: Object.keys(storage.closedSpaces)
+        });
+
         await chrome.storage.local.set({
           [STORAGE_KEY]: storage
         });
 
+        console.log('[StorageManager] Storage write completed, performing verification...');
+
         // Verify the write was successful by reading back
         const verification = await chrome.storage.local.get(STORAGE_KEY);
         if (!verification[STORAGE_KEY] || verification[STORAGE_KEY].lastModified !== storage.lastModified) {
+          console.error('[StorageManager] ❌ Storage verification FAILED!', {
+            verificationExists: !!verification[STORAGE_KEY],
+            expectedTimestamp: storage.lastModified,
+            actualTimestamp: verification[STORAGE_KEY]?.lastModified
+          });
           throw new Error('Storage verification failed - data was not persisted correctly');
         }
+
+        console.log('[StorageManager] ✅ Storage verification passed');
       },
       'STORAGE_ERROR'
     );
@@ -173,12 +203,32 @@ export class StorageManager implements IStorageManager {
   }
 
   /**
+   * Update the permanent ID mapping for a window ID
+   * Used when re-keying spaces during restoration
+   */
+  async updatePermanentIdMapping(windowId: number, permanentId: string): Promise<void> {
+    const storage = await this.loadStorage();
+    const windowIdStr = windowId.toString();
+    storage.permanentIdMappings[windowIdStr] = permanentId;
+    await this.saveStorage(storage);
+    console.log(`[StorageManager] Updated permanent ID mapping: ${windowIdStr} → ${permanentId}`);
+  }
+
+  /**
    * Save active spaces to storage
    */
   async saveSpaces(spaces: Record<string, Space>): Promise<void> {
+    console.log('[StorageManager] saveSpaces() called', {
+      count: Object.keys(spaces).length,
+      spaceIds: Object.keys(spaces),
+      customNames: Object.entries(spaces).map(([id, space]) => ({ id, customName: space.customName }))
+    });
+
     const storage = await this.loadStorage();
     storage.spaces = spaces;
     await this.saveStorage(storage);
+
+    console.log('[StorageManager] saveSpaces() completed successfully');
   }
 
   /**
@@ -193,10 +243,18 @@ export class StorageManager implements IStorageManager {
    * Save closed spaces to storage
    */
   async saveClosedSpaces(spaces: Record<string, Space>): Promise<void> {
-    console.log('[StorageManager] Saving closed spaces:', spaces);
+    console.log('[StorageManager] saveClosedSpaces() called', {
+      count: Object.keys(spaces).length,
+      spaceIds: Object.keys(spaces),
+      customNames: Object.entries(spaces).map(([id, space]) => ({ id, customName: space.customName })),
+      fullData: spaces
+    });
+
     const storage = await this.loadStorage();
     storage.closedSpaces = spaces;
     await this.saveStorage(storage);
+
+    console.log('[StorageManager] saveClosedSpaces() completed successfully');
   }
 
   /**
@@ -211,30 +269,50 @@ export class StorageManager implements IStorageManager {
    * Update space custom name
    */
   async updateSpaceCustomName(spaceId: string, customName: string): Promise<void> {
+    console.log('[StorageManager] updateSpaceCustomName() called', {
+      spaceId,
+      customName,
+      timestamp: new Date().toISOString()
+    });
+
     const storage = await this.loadStorage();
+
+    let updatedLocation = 'none';
 
     // Update in active spaces
     if (storage.spaces[spaceId]) {
+      console.log('[StorageManager] Updating custom name in active spaces:', spaceId);
       storage.spaces[spaceId].customName = customName;
       storage.spaces[spaceId].name = customName; // Keep name field in sync
       storage.spaces[spaceId].named = true;
       storage.spaces[spaceId].lastModified = Date.now();
       storage.spaces[spaceId].version = (storage.spaces[spaceId].version || 1) + 1;
+      updatedLocation = 'active';
     }
 
     // Update in closed spaces
     if (storage.closedSpaces[spaceId]) {
+      console.log('[StorageManager] Updating custom name in closed spaces:', spaceId);
       storage.closedSpaces[spaceId].customName = customName;
       storage.closedSpaces[spaceId].name = customName; // Keep name field in sync
       storage.closedSpaces[spaceId].named = true;
       storage.closedSpaces[spaceId].lastModified = Date.now();
       storage.closedSpaces[spaceId].version = (storage.closedSpaces[spaceId].version || 1) + 1;
+      updatedLocation = updatedLocation === 'active' ? 'both' : 'closed';
+    }
+
+    console.log('[StorageManager] Custom name update location:', updatedLocation);
+
+    if (updatedLocation === 'none') {
+      console.warn('[StorageManager] ⚠️ Space not found in active or closed spaces:', spaceId);
     }
 
     // Add error handling for storage operation
     try {
       await this.saveStorage(storage);
+      console.log('[StorageManager] updateSpaceCustomName() completed successfully');
     } catch (error) {
+      console.error('[StorageManager] ❌ Failed to save custom name:', error);
       throw new Error(`Failed to save custom name to storage: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }

@@ -101,17 +101,19 @@ export class RestoreSpaceTransaction {
 
   private async executeRestore(spaceId: string): Promise<void> {
     const space = await this.getSpaceWithRetry(spaceId);
-    
+
     // Create window with retry mechanism
     this.setState('CREATING_WINDOW');
     const window = await this.createWindowWithRetry(space.urls);
-    
+
     if (!window?.id) {
       throw new Error('Failed to create window with valid ID');
     }
 
-    // Atomic update of space data
-    await this.atomicSpaceUpdate(spaceId, window);
+    // Re-key the space from old ID to new window ID
+    // This is crucial because window IDs change after browser restart
+    console.log(`[RestoreSpaceTransaction] Re-keying space ${spaceId} to new window ID ${window.id}`);
+    await this.stateManager.rekeySpace(spaceId, window.id);
 
     // Restore tabs with validation
     this.setState('RESTORING_TABS');

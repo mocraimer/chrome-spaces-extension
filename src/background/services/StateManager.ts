@@ -92,12 +92,28 @@ export class StateManager implements IStateManager {
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   async initialize(): Promise<void> {
+    console.log('[StateManager] ========== INITIALIZATION START ==========');
+    console.log('[StateManager] Timestamp:', new Date().toISOString());
+
     if (this.initialized) {
+      console.log('[StateManager] Already initialized, skipping');
       return;
     }
 
+    console.log('[StateManager] Loading spaces from storage...');
     this.spaces = await this.storageManager.loadSpaces();
+    console.log('[StateManager] Loaded active spaces:', {
+      count: Object.keys(this.spaces).length,
+      spaceIds: Object.keys(this.spaces),
+      customNames: Object.entries(this.spaces).map(([id, space]) => ({ id, customName: space.customName }))
+    });
+
     this.closedSpaces = await this.storageManager.loadClosedSpaces();
+    console.log('[StateManager] Loaded closed spaces:', {
+      count: Object.keys(this.closedSpaces).length,
+      spaceIds: Object.keys(this.closedSpaces),
+      customNames: Object.entries(this.closedSpaces).map(([id, space]) => ({ id, customName: space.customName }))
+    });
 
     // CRITICAL FIX: Reset all active states on startup
     // This ensures no stale active states persist across Chrome restarts
@@ -117,11 +133,13 @@ export class StateManager implements IStateManager {
 
     // Save the reset state to storage immediately
     if (Object.keys(updatedSpaces).length > 0) {
+      console.log('[StateManager] Saving reset state to storage...');
       await this.storageManager.saveSpaces(this.spaces);
-      console.log(`[StateManager] Reset ${Object.keys(updatedSpaces).length} spaces to inactive state`);
+      console.log(`[StateManager] ✅ Reset ${Object.keys(updatedSpaces).length} spaces to inactive state`);
     }
 
     this.initialized = true;
+    console.log('[StateManager] ========== INITIALIZATION COMPLETE ==========');
   }
 
   /**
@@ -204,6 +222,8 @@ export class StateManager implements IStateManager {
       const updatedSpace: Space = {
         ...space,
         sourceWindowId: window.id.toString(),
+        windowId: window.id, // Associate with the window
+        isActive: true, // Mark as active when window is assigned
         lastModified: Date.now(),
         version: space.version + 1
       };
@@ -212,7 +232,20 @@ export class StateManager implements IStateManager {
       this.validateStateTransition(space, updatedSpace);
 
       // Update in appropriate collection with atomic write
-      if (spaceId in this.spaces) {
+      // If space is in closedSpaces and being activated, move it to spaces
+      if (spaceId in this.closedSpaces && updatedSpace.isActive) {
+        const updatedSpaces = { ...this.spaces, [spaceId]: updatedSpace };
+        const updatedClosedSpaces = { ...this.closedSpaces };
+        delete updatedClosedSpaces[spaceId];
+
+        await Promise.all([
+          this.storageManager.saveSpaces(updatedSpaces),
+          this.storageManager.saveClosedSpaces(updatedClosedSpaces)
+        ]);
+
+        this.spaces = updatedSpaces;
+        this.closedSpaces = updatedClosedSpaces;
+      } else if (spaceId in this.spaces) {
         const updatedSpaces = { ...this.spaces, [spaceId]: updatedSpace };
         await this.storageManager.saveSpaces(updatedSpaces);
         this.spaces = updatedSpaces;
@@ -309,10 +342,20 @@ export class StateManager implements IStateManager {
   }
 
   async handleShutdown(): Promise<void> {
-    console.log('[StateManager] handleShutdown called - marking all spaces as inactive');
+    console.log('[StateManager] ========== SHUTDOWN START ==========');
+    console.log('[StateManager] Timestamp:', new Date().toISOString());
+    console.log('[StateManager] Current state before shutdown:', {
+      activeSpacesCount: Object.keys(this.spaces).length,
+      closedSpacesCount: Object.keys(this.closedSpaces).length,
+      activeSpaceIds: Object.keys(this.spaces),
+      closedSpaceIds: Object.keys(this.closedSpaces),
+      activeCustomNames: Object.entries(this.spaces).map(([id, space]) => ({ id, customName: space.customName })),
+      closedCustomNames: Object.entries(this.closedSpaces).map(([id, space]) => ({ id, customName: space.customName }))
+    });
 
     // CRITICAL FIX: Mark all spaces as inactive before shutdown
     // This prevents stale active states from persisting across Chrome restarts
+    console.log('[StateManager] Marking all spaces as inactive...');
     const updatedSpaces: Record<string, Space> = {};
     for (const [spaceId, space] of Object.entries(this.spaces)) {
       updatedSpaces[spaceId] = {
@@ -326,27 +369,38 @@ export class StateManager implements IStateManager {
 
     // Save the inactive state to storage
     this.spaces = updatedSpaces;
+    console.log('[StateManager] Spaces updated in memory, preparing to save...');
 
     // CRITICAL: Save BOTH spaces and closed spaces
     // Without this, closed spaces are lost during shutdown
+    console.log('[StateManager] Saving BOTH active and closed spaces to storage...');
+    const saveStartTime = Date.now();
+
     await Promise.all([
       this.storageManager.saveSpaces(this.spaces),
       this.storageManager.saveClosedSpaces(this.closedSpaces),
     ]);
 
-    console.log('[StateManager] Saved spaces and closed spaces during shutdown');
+    const saveEndTime = Date.now();
+    console.log('[StateManager] ✅ Saved spaces and closed spaces during shutdown', {
+      duration: `${saveEndTime - saveStartTime}ms`,
+      activeSpacesSaved: Object.keys(this.spaces).length,
+      closedSpacesSaved: Object.keys(this.closedSpaces).length
+    });
 
     // Clean up broadcast timeout on shutdown
     if (this.broadcastTimeoutId) {
+      console.log('[StateManager] Clearing broadcast timeout');
       clearTimeout(this.broadcastTimeoutId);
       this.broadcastTimeoutId = null;
     }
 
     // Send final broadcast before shutdown
+    console.log('[StateManager] Sending final state broadcast');
     this.broadcastStateUpdate();
 
     // No need to synchronize after marking everything inactive
-    console.log('[StateManager] All spaces marked as inactive for shutdown');
+    console.log('[StateManager] ========== SHUTDOWN COMPLETE ==========');
   }
 
   /**
@@ -664,9 +718,24 @@ export class StateManager implements IStateManager {
     await this.acquireLock(spaceId);
 
     try {
-      const space = this.closedSpaces[spaceId];
+      // Check both closedSpaces and inactive spaces in the spaces object
+      let space = this.closedSpaces[spaceId];
+      let fromClosedSpaces = true;
+
       if (!space) {
-        throw new Error(`Closed space not found: ${spaceId}`);
+        // Check if it's an inactive space in the spaces object
+        space = this.spaces[spaceId];
+        fromClosedSpaces = false;
+
+        if (!space) {
+          throw new Error(`Space not found: ${spaceId}`);
+        }
+
+        // If space is already active, don't need to restore
+        if (space.isActive) {
+          console.log(`[StateManager] Space ${spaceId} is already active, skipping restore`);
+          return;
+        }
       }
 
       const updatedSpace: Space = {
@@ -681,14 +750,18 @@ export class StateManager implements IStateManager {
       // Validate state transition
       this.validateStateTransition(space, updatedSpace);
 
-      // Atomic updates
-      const updatedClosedSpaces = { ...this.closedSpaces };
-      delete updatedClosedSpaces[spaceId];
-      
-      const updatedSpaces = {
-        ...this.spaces,
-        [spaceId]: updatedSpace
-      };
+      // Atomic updates - handle both cases
+      let updatedClosedSpaces = { ...this.closedSpaces };
+      let updatedSpaces = { ...this.spaces };
+
+      if (fromClosedSpaces) {
+        // Remove from closed spaces, add to active spaces
+        delete updatedClosedSpaces[spaceId];
+        updatedSpaces[spaceId] = updatedSpace;
+      } else {
+        // Just update the inactive space to active in spaces
+        updatedSpaces[spaceId] = updatedSpace;
+      }
 
       // Save updates atomically
       await Promise.all([
@@ -713,6 +786,7 @@ export class StateManager implements IStateManager {
       });
 
       this.broadcastStateUpdate();
+      console.log(`[StateManager] ✅ Restored space ${spaceId} (from ${fromClosedSpaces ? 'closedSpaces' : 'inactive spaces'})`);
     } catch (error) {
       throw new Error(`Failed to restore space: ${(error as Error).message}`);
     } finally {
@@ -729,6 +803,80 @@ export class StateManager implements IStateManager {
     delete this.closedSpaces[spaceId];
     await this.storageManager.saveClosedSpaces(this.closedSpaces);
     this.broadcastStateUpdate();
+  }
+
+  /**
+   * Re-keys a space from an old ID to a new ID (typically a new window ID after restoration)
+   * This is crucial for space restoration when window IDs change after browser restart
+   */
+  async rekeySpace(oldSpaceId: string, newWindowId: number): Promise<void> {
+    const newSpaceId = newWindowId.toString();
+
+    // Lock both IDs to prevent race conditions
+    await this.acquireLock(oldSpaceId);
+    await this.acquireLock(newSpaceId);
+
+    try {
+      // Get the space from either active or closed spaces
+      const space = this.spaces[oldSpaceId] || this.closedSpaces[oldSpaceId];
+
+      if (!space) {
+        throw new Error(`Space not found with ID: ${oldSpaceId}`);
+      }
+
+      console.log(`[StateManager] Re-keying space from ${oldSpaceId} to ${newSpaceId}`);
+
+      // Create updated space with new IDs
+      const updatedSpace: Space = {
+        ...space,
+        id: newSpaceId,
+        sourceWindowId: newSpaceId,
+        windowId: newWindowId,
+        isActive: true,
+        lastModified: Date.now(),
+        version: space.version + 1
+      };
+
+      // Remove from old location
+      const updatedSpaces = { ...this.spaces };
+      const updatedClosedSpaces = { ...this.closedSpaces };
+
+      delete updatedSpaces[oldSpaceId];
+      delete updatedClosedSpaces[oldSpaceId];
+
+      // Add to new location in active spaces
+      updatedSpaces[newSpaceId] = updatedSpace;
+
+      // Update permanent ID mapping
+      await this.storageManager.updatePermanentIdMapping(newWindowId, space.permanentId);
+
+      // Save all changes atomically
+      await Promise.all([
+        this.storageManager.saveSpaces(updatedSpaces),
+        this.storageManager.saveClosedSpaces(updatedClosedSpaces)
+      ]);
+
+      // Update in-memory state
+      this.spaces = updatedSpaces;
+      this.closedSpaces = updatedClosedSpaces;
+
+      // Invalidate caches
+      this.invalidateCache(`space:${oldSpaceId}`);
+      this.invalidateCache(`space:${newSpaceId}`);
+      this.invalidateCache('spaces');
+      this.invalidateCache('closedSpaces');
+
+      this.broadcastStateUpdate();
+
+      console.log(`[StateManager] ✅ Successfully re-keyed space ${oldSpaceId} → ${newSpaceId}`);
+    } catch (error) {
+      const errorMessage = `Failed to re-key space: ${(error as Error).message}`;
+      console.error(`[StateManager] ${errorMessage}`);
+      throw new Error(errorMessage);
+    } finally {
+      this.releaseLock(oldSpaceId);
+      this.releaseLock(newSpaceId);
+    }
   }
 
   async renameSpace(windowId: number, name: string): Promise<void> {
