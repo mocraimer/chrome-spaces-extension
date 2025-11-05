@@ -64,6 +64,28 @@ export class MessageHandler implements IMessageHandler {
   private async processAction(request: any): Promise<any> {
     switch (request.action) {
       case ActionTypes.GET_ALL_SPACES:
+        // Ensure state manager is initialized
+        await this.stateManager.ensureInitialized();
+        
+        // Check if current window has a space, or if no spaces exist at all
+        // This fixes the issue where popup opens before synchronization happens
+        const currentWindow = await this.windowManager.getCurrentWindow();
+        const currentWindowId = currentWindow?.id;
+        const spaces = this.stateManager.getAllSpaces();
+        const needsSync = !currentWindowId || 
+                         !spaces[currentWindowId.toString()] || 
+                         Object.keys(spaces).length === 0;
+        
+        if (needsSync) {
+          try {
+            // Trigger synchronization to ensure current window has a space
+            await this.stateManager.synchronizeWindowsAndSpaces();
+          } catch (error) {
+            // Log but don't fail - return whatever spaces we have
+            console.warn('[MessageHandler] Synchronization failed during GET_ALL_SPACES:', error);
+          }
+        }
+        
         return {
           spaces: this.stateManager.getAllSpaces(),
           closedSpaces: this.stateManager.getClosedSpaces()
