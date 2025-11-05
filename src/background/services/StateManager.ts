@@ -502,7 +502,7 @@ export class StateManager implements IStateManager {
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
         const name = `${DEFAULT_SPACE_NAME} ${spaceId}`;
-        const space = await this.storageManager.createSpace(window.id, name, urls);
+        const space = await (this.storageManager as any).createSpace(window.id, name, urls);
 
         updatedSpaces[spaceId] = {
           ...space,
@@ -654,7 +654,7 @@ export class StateManager implements IStateManager {
       // Create new space using StorageManager
       const name = options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${spaceId}`;
       const customName = options?.named ? name : undefined;
-      const space = await this.storageManager.createSpace(windowId, name, urls, customName);
+      const space = await (this.storageManager as any).createSpace(windowId, name, urls, customName);
 
       // Atomic update
       const updatedSpaces = { ...this.spaces, [spaceId]: space };
@@ -672,39 +672,62 @@ export class StateManager implements IStateManager {
   @PerformanceTrackingService.track(MetricCategories.STATE, 1000)
   async closeSpace(windowId: number): Promise<void> {
     console.log(`[StateManager] closeSpace called for windowId: ${windowId}`);
-    const spaceId = windowId.toString();
-    const space = this.spaces[spaceId];
+    const activeSpaceId = windowId.toString();
+    const space = this.spaces[activeSpaceId];
 
     if (!space) {
-      // If space is not found, it might have been closed already.
-      // This can happen in scenarios like browser shutdown.
       console.log(`[StateManager] Space not found for windowId: ${windowId}, returning.`);
       return;
     }
 
-    // Move space to closed spaces
-    delete this.spaces[spaceId];
-    this.closedSpaces[spaceId] = {
+    // Snapshot current tabs and filter out chrome://
+    const tabs = await this.tabManager.getTabs(windowId);
+    const urls = tabs
+      .map(tab => this.tabManager.getTabUrl(tab))
+      .filter(url => url && !url.startsWith('chrome://'));
+
+    // Generate a new UUID for the closed space
+    const closedSpaceId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+    // Remove from active and add to closed under UUID key
+    delete this.spaces[activeSpaceId];
+    const closedSpace: Space = {
       ...space,
-      windowId: undefined, // Clear window ID since window is closed
-      isActive: false, // Mark as inactive
+      id: closedSpaceId,
+      urls,
+      windowId: undefined,
+      isActive: false,
       lastModified: Date.now(),
       version: space.version + 1,
     };
+    this.closedSpaces[closedSpaceId] = closedSpace;
 
-    // Save updates
+    // Persist tabs for the closed space and update stores atomically-ish
     await Promise.all([
+      (this.storageManager as any).saveTabsForSpace(
+        closedSpaceId,
+        'closed',
+        urls.map((url, index) => ({
+          id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`),
+          spaceId: closedSpaceId,
+          kind: 'closed',
+          url,
+          index,
+          createdAt: Date.now()
+        }))
+      ),
+      (this.storageManager as any).deleteTabsForSpace(activeSpaceId, 'active'),
       this.storageManager.saveSpaces(this.spaces),
-      this.storageManager.saveClosedSpaces(this.closedSpaces),
+      this.storageManager.saveClosedSpaces(this.closedSpaces)
     ]);
 
     // Queue the state update for broadcasting
     await this.updateQueue.enqueue({
-      id: `close-space-${spaceId}-${Date.now()}`,
+      id: `close-space-${closedSpaceId}-${Date.now()}`,
       type: MessageTypes.SPACE_UPDATED,
       payload: {
-        spaceId,
-        space: this.closedSpaces[spaceId],
+        spaceId: closedSpaceId,
+        space: this.closedSpaces[closedSpaceId],
         action: 'closed'
       },
       priority: StateUpdatePriority.HIGH
@@ -738,29 +761,70 @@ export class StateManager implements IStateManager {
         }
       }
 
+      // If restoring from closed store and we have a new windowId, re-key to that id
+      let targetActiveId = space.id;
+      if (fromClosedSpaces && windowId) {
+        targetActiveId = windowId.toString();
+      }
+
+      // If restoring from closed, reconstruct URLs from tabs store
+      let urls = space.urls || [];
+      if (fromClosedSpaces) {
+        const closedTabs = await (this.storageManager as any).loadTabsForSpace(spaceId, 'closed');
+        if (closedTabs && closedTabs.length) {
+          urls = closedTabs
+            .sort((a: any, b: any) => (a.index ?? 0) - (b.index ?? 0))
+            .map((t: any) => t.url);
+        }
+      }
+
       const updatedSpace: Space = {
         ...space,
+        id: targetActiveId,
+        urls,
         windowId: windowId, // Associate with new window if provided
         isActive: true, // Mark as active when restored
         sourceWindowId: windowId?.toString() || space.sourceWindowId,
         lastModified: Date.now(),
-        version: space.version + 1
+        version: (space.version || 0) + 1
       };
 
-      // Validate state transition
-      this.validateStateTransition(space, updatedSpace);
+      // Validate state transition when not changing id; skip when re-keying
+      if (!fromClosedSpaces || targetActiveId === space.id) {
+        this.validateStateTransition(space, updatedSpace);
+      }
 
       // Atomic updates - handle both cases
-      let updatedClosedSpaces = { ...this.closedSpaces };
-      let updatedSpaces = { ...this.spaces };
+      const updatedClosedSpaces = { ...this.closedSpaces };
+      const updatedSpaces = { ...this.spaces } as Record<string, Space>;
 
       if (fromClosedSpaces) {
-        // Remove from closed spaces, add to active spaces
+        // Remove from closed spaces, add to active spaces under new key
         delete updatedClosedSpaces[spaceId];
-        updatedSpaces[spaceId] = updatedSpace;
+        updatedSpaces[targetActiveId] = updatedSpace;
+
+        // Move tabs from closed -> active
+        if (windowId) {
+          const closedTabs = await (this.storageManager as any).loadTabsForSpace(spaceId, 'closed');
+          await Promise.all([
+            (this.storageManager as any).saveTabsForSpace(
+              targetActiveId,
+              'active',
+              (closedTabs || []).map((t: any, idx: number) => ({
+                id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`),
+                spaceId: targetActiveId,
+                kind: 'active',
+                url: t.url,
+                index: idx,
+                createdAt: Date.now()
+              }))
+            ),
+            (this.storageManager as any).deleteTabsForSpace(spaceId, 'closed')
+          ]);
+        }
       } else {
         // Just update the inactive space to active in spaces
-        updatedSpaces[spaceId] = updatedSpace;
+        updatedSpaces[targetActiveId] = updatedSpace;
       }
 
       // Save updates atomically
@@ -775,10 +839,10 @@ export class StateManager implements IStateManager {
 
       // Queue the state update for broadcasting
       await this.updateQueue.enqueue({
-        id: `restore-space-${spaceId}-${Date.now()}`,
+        id: `restore-space-${targetActiveId}-${Date.now()}`,
         type: MessageTypes.SPACE_UPDATED,
         payload: {
-          spaceId,
+          spaceId: targetActiveId,
           space: updatedSpace,
           action: 'restored'
         },
@@ -802,6 +866,7 @@ export class StateManager implements IStateManager {
 
     delete this.closedSpaces[spaceId];
     await this.storageManager.saveClosedSpaces(this.closedSpaces);
+    await (this.storageManager as any).deleteTabsForSpace(spaceId, 'closed');
     this.broadcastStateUpdate();
   }
 
@@ -848,7 +913,27 @@ export class StateManager implements IStateManager {
       updatedSpaces[newSpaceId] = updatedSpace;
 
       // Update permanent ID mapping
-      await this.storageManager.updatePermanentIdMapping(newWindowId, space.permanentId);
+      await (this.storageManager as any).updatePermanentIdMapping(newWindowId, space.permanentId);
+
+      // Move tabs to new active id
+      const closedTabs = await (this.storageManager as any).loadTabsForSpace(oldSpaceId, 'closed');
+      if (closedTabs?.length) {
+        await Promise.all([
+          (this.storageManager as any).saveTabsForSpace(
+            newSpaceId,
+            'active',
+            closedTabs.map((t: any, idx: number) => ({
+              id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`),
+              spaceId: newSpaceId,
+              kind: 'active',
+              url: t.url,
+              index: idx,
+              createdAt: Date.now()
+            }))
+          ),
+          (this.storageManager as any).deleteTabsForSpace(oldSpaceId, 'closed')
+        ]);
+      }
 
       // Save all changes atomically
       await Promise.all([
@@ -891,7 +976,7 @@ export class StateManager implements IStateManager {
       }
 
       // Update custom name using StorageManager
-      await this.storageManager.updateSpaceCustomName(spaceId, trimmedName);
+      await (this.storageManager as any).updateSpaceCustomName(spaceId, trimmedName);
 
       // Reload spaces to get updated data from storage
       this.spaces = await this.storageManager.loadSpaces();

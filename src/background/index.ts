@@ -1,6 +1,6 @@
 import { WindowManager } from './services/WindowManager';
 import { TabManager } from './services/TabManager';
-import { StorageManager } from './services/StorageManager';
+import { IndexedDbStorageManager } from './services/storage/IndexedDbStorageManager';
 import { StateManager } from './services/StateManager';
 import { MessageHandler } from './services/MessageHandler';
 import { StateUpdateQueue } from './services/StateUpdateQueue';
@@ -11,11 +11,12 @@ import { SettingsState } from '@/options/store/slices/settingsSlice';
 import { PerformanceMessageHandler } from './services/performance/PerformanceMessageHandler';
 import { PerformanceTrackingService, MetricCategories } from './services/performance/PerformanceTrackingService';
 import { Space } from '@/shared/types/Space';
+import { StorageManager as IStorageManager } from '@/shared/types/Services';
 
 class BackgroundService {
   private windowManager: WindowManager;
   private tabManager: TabManager;
-  private storageManager: StorageManager;
+  private storageManager: IStorageManager;
   private stateManager: StateManager;
   private messageHandler: MessageHandler;
   private restoreTransaction: RestoreSpaceTransaction;
@@ -30,7 +31,7 @@ class BackgroundService {
     // Initialize services with performance tracking
     this.windowManager = new WindowManager();
     this.tabManager = new TabManager();
-    this.storageManager = new StorageManager();
+    this.storageManager = new IndexedDbStorageManager() as any;
     const updateQueue = new StateUpdateQueue({
       debounceTime: 100,
       maxQueueSize: 50,

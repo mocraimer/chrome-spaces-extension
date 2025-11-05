@@ -114,10 +114,7 @@ export class RestoreSpaceTransaction {
     // This is crucial because window IDs change after browser restart
     console.log(`[RestoreSpaceTransaction] Re-keying space ${spaceId} to new window ID ${window.id}`);
     await this.stateManager.rekeySpace(spaceId, window.id);
-
-    // Restore tabs with validation
-    this.setState('RESTORING_TABS');
-    await this.restoreTabsWithValidation(window.id, space.urls);
+    // Tabs were created by createWindow; rekeySpace persisted active tab rows.
   }
 
   private async getSpaceWithRetry(spaceId: string, maxRetries = 3): Promise<Space> {

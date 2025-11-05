@@ -1,11 +1,25 @@
 import '@testing-library/jest-dom';
+import 'fake-indexeddb/auto';
 import { jest } from '@jest/globals';
 import { TextEncoder, TextDecoder } from 'util';
+import { webcrypto as nodeWebCrypto } from 'crypto';
+import { TransformStream as NodeTransformStream } from 'stream/web';
 import type { RootState } from '../popup/store/types';
 import { mockSpaces, mockClosedSpaces } from './mocks/mockTypes';
 
 global.TextEncoder = TextEncoder as any;
 global.TextDecoder = TextDecoder as any;
+
+// Polyfill Web Crypto and TransformStream for libraries expecting browser APIs
+(global as any).crypto = (global as any).crypto || nodeWebCrypto;
+(global as any).TransformStream = (global as any).TransformStream || NodeTransformStream;
+
+// Polyfill structuredClone for fake-indexeddb (Node < 17)
+if (typeof (global as any).structuredClone === 'undefined') {
+  (global as any).structuredClone = <T>(obj: T): T => {
+    return JSON.parse(JSON.stringify(obj));
+  };
+}
 
 // Mock Chrome API
 const mockChrome = {
@@ -22,26 +36,26 @@ const mockChrome = {
   },
   storage: {
     local: {
-      get: jest.fn(),
-      set: jest.fn()
+      get: (jest.fn() as any).mockResolvedValue({}),
+      set: (jest.fn() as any).mockResolvedValue(undefined)
     },
     sync: {
-      get: jest.fn(),
-      set: jest.fn()
+      get: (jest.fn() as any).mockResolvedValue({}),
+      set: (jest.fn() as any).mockResolvedValue(undefined)
     }
   },
   tabs: {
-    query: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    remove: jest.fn()
+    query: (jest.fn() as any).mockResolvedValue([]),
+    create: (jest.fn() as any).mockResolvedValue({}),
+    update: (jest.fn() as any).mockResolvedValue({}),
+    remove: (jest.fn() as any).mockResolvedValue(undefined)
   },
   windows: {
-    create: jest.fn(),
-    update: jest.fn(),
-    remove: jest.fn(),
-    get: jest.fn(),
-    getAll: jest.fn()
+    create: (jest.fn() as any).mockResolvedValue({ id: 1, focused: true, tabs: [] }),
+    update: (jest.fn() as any).mockResolvedValue({}),
+    remove: (jest.fn() as any).mockResolvedValue(undefined),
+    get: (jest.fn() as any).mockResolvedValue({ id: 1, focused: true, tabs: [] }),
+    getAll: (jest.fn() as any).mockResolvedValue([])
   },
   commands: {
     getAll: jest.fn(),
