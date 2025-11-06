@@ -95,7 +95,7 @@ describe('StateBroadcastService', () => {
     beforeEach(() => {
       // Set up connected windows
       const connectHandler = (global.chrome.runtime.onConnect.addListener as jest.Mock).mock.calls[0][0];
-      
+
       // Connect window 1
       connectHandler(mockPort);
 
@@ -112,9 +112,16 @@ describe('StateBroadcastService', () => {
     });
 
     it('broadcasts updates to all connected windows', () => {
+      jest.useFakeTimers();
+
       service.broadcast(mockUpdate);
 
+      // Advance timers to allow debounce to complete
+      jest.advanceTimersByTime(150);
+
       expect(mockPort.postMessage).toHaveBeenCalledWith(mockUpdate);
+
+      jest.useRealTimers();
     });
 
     it('handles state updates from specific windows', () => {
@@ -132,17 +139,33 @@ describe('StateBroadcastService', () => {
 
   describe('error handling', () => {
     it('handles failed message sending', () => {
+      jest.useFakeTimers();
+
       // Set up a port that throws on postMessage
       const errorPort = {
         ...mockPort,
+        sender: {
+          tab: {
+            windowId: 1
+          }
+        },
+        onDisconnect: {
+          addListener: jest.fn()
+        },
+        onMessage: {
+          addListener: jest.fn()
+        },
         postMessage: jest.fn().mockImplementation(() => {
           throw new Error('Failed to send');
         })
-      };
+      } as unknown as chrome.runtime.Port;
 
       // Connect the error port
       const connectHandler = (global.chrome.runtime.onConnect.addListener as jest.Mock).mock.calls[0][0];
       connectHandler(errorPort);
+
+      // Verify connection is established
+      expect(service.connectionCount).toBe(1);
 
       // Attempt broadcast
       service.broadcast({
@@ -152,8 +175,13 @@ describe('StateBroadcastService', () => {
         timestamp: Date.now()
       });
 
+      // Advance timers to allow debounce and error handling to complete
+      jest.advanceTimersByTime(150);
+
       // Port should be removed after error
       expect(service.connectionCount).toBe(0);
+
+      jest.useRealTimers();
     });
   });
 });
