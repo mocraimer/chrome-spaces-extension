@@ -20,6 +20,7 @@ class BackgroundService {
   private stateManager: StateManager;
   private messageHandler: MessageHandler;
   private restoreTransaction: RestoreSpaceTransaction;
+  private restoringWindowIds = new Set<number>();
 
   constructor() {
     console.log('[BackgroundService] Constructor called - Initializing background service');
@@ -31,7 +32,7 @@ class BackgroundService {
     // Initialize services with performance tracking
     this.windowManager = new WindowManager();
     this.tabManager = new TabManager();
-    this.storageManager = new IndexedDbStorageManager() as any;
+    this.storageManager = new IndexedDbStorageManager();
     const updateQueue = new StateUpdateQueue({
       debounceTime: 100,
       maxQueueSize: 50,
@@ -51,7 +52,8 @@ class BackgroundService {
     this.restoreTransaction = new RestoreSpaceTransaction(
       this.windowManager,
       this.stateManager,
-      this.tabManager
+      this.tabManager,
+      this.restoringWindowIds
     );
 
     this.messageHandler = new MessageHandler(
@@ -116,8 +118,16 @@ class BackgroundService {
 
     // Window event listeners
     chrome.windows.onCreated.addListener(async (window) => {
+      if (!window.id) return;
+
+      // Skip if this window is being restored - RestoreSpaceTransaction will handle it
+      if (this.restoringWindowIds.has(window.id)) {
+        console.log(`[BackgroundService] Skipping createSpace for window ${window.id} - restoration in progress`);
+        return;
+      }
+
       await this.stateManager.ensureInitialized();
-      await this.stateManager.createSpace(window.id!);
+      await this.stateManager.createSpace(window.id);
     });
 
     chrome.windows.onRemoved.addListener(async (windowId) => {
@@ -323,6 +333,12 @@ class BackgroundService {
 
   @PerformanceTrackingService.track(MetricCategories.WINDOW, 1000)
   private async ensureWindowHasSpace(windowId: number): Promise<void> {
+    // Skip if this window is being restored - RestoreSpaceTransaction will handle it
+    if (this.restoringWindowIds.has(windowId)) {
+      console.log(`[BackgroundService] Skipping ensureWindowHasSpace for window ${windowId} - restoration in progress`);
+      return;
+    }
+
     if (!this.stateManager.hasSpace(windowId)) {
       await this.stateManager.createSpace(windowId);
     }

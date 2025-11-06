@@ -13,9 +13,9 @@ export const useSpaceFiltering = (
   closedSpaces: Record<string, Space>,
   searchQuery: string
 ): SpaceFilteringResult => {
-  // Get display name for a space (custom name takes precedence)
+  // Get display name for a space
   const getDisplayName = useCallback((space: Space): string => {
-    return space.customName || space.name;
+    return space.name;
   }, []);
 
   // Filter function for spaces based on search query

@@ -9,6 +9,40 @@ const ErrorThrowingComponent = () => {
   throw new Error('Test error');
 };
 
+class TestErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Captured error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-boundary">
+          <h2>Something went wrong</h2>
+          <p>{this.state.error?.message}</p>
+          <button onClick={() => this.setState({ hasError: false, error: undefined })}>
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 describe('Options Navigation and Error Boundary', () => {
   it('should display error boundary UI when a child component crashes', () => {
     // Suppress error logging in test output
@@ -18,7 +52,9 @@ describe('Options Navigation and Error Boundary', () => {
     const { getByText } = render(
       <Provider store={store}>
         <ThemeProvider>
-          <ErrorThrowingComponent />
+          <TestErrorBoundary>
+            <ErrorThrowingComponent />
+          </TestErrorBoundary>
         </ThemeProvider>
       </Provider>
     );

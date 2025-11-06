@@ -140,6 +140,9 @@ declare global {
       toHaveBeenCalledWith(expected: any): R;
       toHaveBeenCalled(): R;
       toHaveBeenCalledTimes(times: number): R;
+      toBeInTheDocument(): R;
+      toHaveTextContent(expected: string | RegExp, options?: { normalizeWhitespace?: boolean }): R;
+      toHaveClass(...classNames: string[]): R;
     }
   }
 }

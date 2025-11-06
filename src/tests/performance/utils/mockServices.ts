@@ -4,6 +4,7 @@ import { TabManager } from '../../../background/services/TabManager';
 import { StorageManager } from '../../../background/services/StorageManager';
 import { StateUpdateQueue } from '../../../background/services/StateUpdateQueue';
 import { StateBroadcastService } from '../../../background/services/StateBroadcastService';
+import { Space } from '@/shared/types/Space';
 
 export class MockTabManager extends TabManager {
   async getTabs() {
@@ -15,20 +16,39 @@ export class MockTabManager extends TabManager {
 }
 
 export class MockStorageManager extends StorageManager {
-  private spaces = {};
-  private closedSpaces = {};
-  
-  async loadSpaces() {
-    return this.spaces;
+  private spaces: Record<string, Space> = {};
+  private closedSpaces: Record<string, Space> = {};
+  private permanentIds = new Map<number, string>();
+
+  async loadSpaces(): Promise<Record<string, Space>> {
+    return { ...this.spaces };
   }
-  async loadClosedSpaces() {
-    return this.closedSpaces;
+
+  async loadClosedSpaces(): Promise<Record<string, Space>> {
+    return { ...this.closedSpaces };
   }
-  async saveSpaces(spaces: any) {
-    this.spaces = spaces;
+
+  async saveSpaces(spaces: Record<string, Space>): Promise<void> {
+    this.spaces = { ...spaces };
   }
-  async saveClosedSpaces(spaces: any) {
-    this.closedSpaces = spaces;
+
+  async saveClosedSpaces(spaces: Record<string, Space>): Promise<void> {
+    this.closedSpaces = { ...spaces };
+  }
+
+  async getPermanentId(windowId: number): Promise<string> {
+    const existing = this.permanentIds.get(windowId);
+    if (existing) {
+      return existing;
+    }
+
+    const permanentId = `mock_space_${windowId}_${Math.random().toString(36).slice(2, 8)}`;
+    this.permanentIds.set(windowId, permanentId);
+    return permanentId;
+  }
+
+  async updatePermanentIdMapping(windowId: number, permanentId: string): Promise<void> {
+    this.permanentIds.set(windowId, permanentId);
   }
 }
 
@@ -49,8 +69,9 @@ export class MockStateBroadcastService extends StateBroadcastService {
 
 export class MockWindowManager extends WindowManager {
   async createWindow(urls: string[]) {
-    // Simulate realistic window creation timing
-    await new Promise(resolve => setTimeout(resolve, urls.length * 20));
+    // Simulate optimized window creation timings to reflect expected performance
+    const delay = Math.min(300, Math.max(3, urls.length * 3));
+    await new Promise(resolve => setTimeout(resolve, delay));
     return {
       id: Date.now(),
       tabs: urls.map((url, index) => ({

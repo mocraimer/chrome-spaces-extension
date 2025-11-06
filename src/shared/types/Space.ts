@@ -3,17 +3,16 @@
  */
 export interface Space {
   id: string;
-  name: string;
+  name: string;               // Display name (user's custom name when named=true, auto-generated when named=false)
   urls: string[];
   lastModified: number;
-  named: boolean;
-  version: number; // Tracks state version for sync
-  lastSync?: number; // Last successful sync timestamp
-  sourceWindowId?: string; // ID of window that last modified this space
-  
+  named: boolean;             // True if user explicitly set the name
+  version: number;            // Tracks state version for sync
+  lastSync?: number;          // Last successful sync timestamp
+  sourceWindowId?: string;    // ID of window that last modified this space
+
   // UI fields (from popup)
   permanentId: string;        // Stable ID across browser restarts
-  customName?: string;        // User-defined custom name
   createdAt: number;          // When space was first created
   lastUsed: number;           // Last time space was accessed
   isActive: boolean;          // Whether window is currently open

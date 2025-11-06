@@ -53,7 +53,7 @@ const UnifiedPopup: React.FC = () => {
 
   // Get display name for a space (custom name takes precedence)
   const getDisplayName = useCallback((space: Space): string => {
-    return space.customName || space.name;
+    return space.name;
   }, []);
 
   // Initialize data on mount

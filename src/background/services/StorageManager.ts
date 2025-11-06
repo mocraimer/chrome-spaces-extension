@@ -1,4 +1,4 @@
-import { StorageManager as IStorageManager } from '@/shared/types/Services';
+import { StorageManager as IStorageManager, TabRecord } from '@/shared/types/Services';
 import { Space, ChromeSpacesStorage, MigrationData } from '@/shared/types/Space';
 import { executeChromeApi, typeGuards } from '@/shared/utils';
 import { STORAGE_KEY } from '@/shared/constants';
@@ -29,13 +29,18 @@ export class StorageManager implements IStorageManager {
   }
 
   private static migrateLegacySpace(legacySpace: any): Space {
+    // If legacy space had customName, use it for name and mark as named
+    const name = legacySpace.customName || legacySpace.name;
+    const named = !!legacySpace.customName || legacySpace.named;
+
     return {
       ...legacySpace,
+      name,
+      named,
       permanentId: legacySpace.permanentId || this.generatePermanentId(),
       createdAt: legacySpace.createdAt || Date.now(),
       lastUsed: legacySpace.lastUsed || Date.now(),
       isActive: legacySpace.isActive || false,
-      customName: legacySpace.customName,
       windowId: legacySpace.windowId,
       version: legacySpace.version || 1
     };
@@ -155,17 +160,16 @@ export class StorageManager implements IStorageManager {
       for (const closedSpace of migrationData.closedSpaces) {
         if (closedSpace && typeof closedSpace === 'object') {
           const spaceId = closedSpace.id || StorageManager.generatePermanentId();
-          const customName = migrationData.spaceCustomNames?.[closedSpace.permanentId]?.customName;
-          
+          const legacyCustomName = migrationData.spaceCustomNames?.[closedSpace.permanentId]?.customName;
+
           newStorage.closedSpaces[spaceId] = {
             id: spaceId,
-            name: closedSpace.name || 'Untitled Space',
+            name: legacyCustomName || closedSpace.name || 'Untitled Space',  // Use legacy customName if available
             urls: closedSpace.urls || [],
             lastModified: closedSpace.closedAt || Date.now(),
-            named: !!customName,
+            named: !!legacyCustomName,
             version: 1,
             permanentId: closedSpace.permanentId || StorageManager.generatePermanentId(),
-            customName: customName,
             createdAt: closedSpace.createdAt || Date.now(),
             lastUsed: closedSpace.closedAt || Date.now(),
             isActive: false,
@@ -221,7 +225,7 @@ export class StorageManager implements IStorageManager {
     console.log('[StorageManager] saveSpaces() called', {
       count: Object.keys(spaces).length,
       spaceIds: Object.keys(spaces),
-      customNames: Object.entries(spaces).map(([id, space]) => ({ id, customName: space.customName }))
+      customNames: Object.entries(spaces).map(([id, space]) => ({ id, name: space.name, named: space.named }))
     });
 
     const storage = await this.loadStorage();
@@ -246,7 +250,7 @@ export class StorageManager implements IStorageManager {
     console.log('[StorageManager] saveClosedSpaces() called', {
       count: Object.keys(spaces).length,
       spaceIds: Object.keys(spaces),
-      customNames: Object.entries(spaces).map(([id, space]) => ({ id, customName: space.customName })),
+      customNames: Object.entries(spaces).map(([id, space]) => ({ id, name: space.name, named: space.named })),
       fullData: spaces
     });
 
@@ -265,73 +269,21 @@ export class StorageManager implements IStorageManager {
     return storage.closedSpaces;
   }
 
-  /**
-   * Update space custom name
-   */
-  async updateSpaceCustomName(spaceId: string, customName: string): Promise<void> {
-    console.log('[StorageManager] updateSpaceCustomName() called', {
-      spaceId,
-      customName,
-      timestamp: new Date().toISOString()
-    });
-
-    const storage = await this.loadStorage();
-
-    let updatedLocation = 'none';
-
-    // Update in active spaces
-    if (storage.spaces[spaceId]) {
-      console.log('[StorageManager] Updating custom name in active spaces:', spaceId);
-      storage.spaces[spaceId].customName = customName;
-      storage.spaces[spaceId].name = customName; // Keep name field in sync
-      storage.spaces[spaceId].named = true;
-      storage.spaces[spaceId].lastModified = Date.now();
-      storage.spaces[spaceId].version = (storage.spaces[spaceId].version || 1) + 1;
-      updatedLocation = 'active';
-    }
-
-    // Update in closed spaces
-    if (storage.closedSpaces[spaceId]) {
-      console.log('[StorageManager] Updating custom name in closed spaces:', spaceId);
-      storage.closedSpaces[spaceId].customName = customName;
-      storage.closedSpaces[spaceId].name = customName; // Keep name field in sync
-      storage.closedSpaces[spaceId].named = true;
-      storage.closedSpaces[spaceId].lastModified = Date.now();
-      storage.closedSpaces[spaceId].version = (storage.closedSpaces[spaceId].version || 1) + 1;
-      updatedLocation = updatedLocation === 'active' ? 'both' : 'closed';
-    }
-
-    console.log('[StorageManager] Custom name update location:', updatedLocation);
-
-    if (updatedLocation === 'none') {
-      console.warn('[StorageManager] ⚠️ Space not found in active or closed spaces:', spaceId);
-    }
-
-    // Add error handling for storage operation
-    try {
-      await this.saveStorage(storage);
-      console.log('[StorageManager] updateSpaceCustomName() completed successfully');
-    } catch (error) {
-      console.error('[StorageManager] ❌ Failed to save custom name:', error);
-      throw new Error(`Failed to save custom name to storage: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
 
   /**
    * Create a new space with all required fields
    */
-  async createSpace(windowId: number, name: string, urls: string[], customName?: string): Promise<Space> {
+  async createSpace(windowId: number, name: string, urls: string[], named: boolean = false): Promise<Space> {
     const permanentId = await this.getPermanentId(windowId);
-    
+
     const space: Space = {
       id: windowId.toString(),
       name: name,
       urls: urls,
       lastModified: Date.now(),
-      named: !!customName,
+      named,
       version: 1,
       permanentId: permanentId,
-      customName: customName,
       createdAt: Date.now(),
       lastUsed: Date.now(),
       isActive: true,
@@ -384,5 +336,19 @@ export class StorageManager implements IStorageManager {
     } catch (error) {
       throw new Error(`Invalid import data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  // Stub implementations for tab-related methods (legacy StorageManager doesn't support tabs)
+  async loadTabsForSpace(_spaceId: string, _kind: 'active' | 'closed'): Promise<TabRecord[]> {
+    // Legacy StorageManager doesn't support tabs - return empty array
+    return [];
+  }
+
+  async saveTabsForSpace(_spaceId: string, _kind: 'active' | 'closed', _tabs: TabRecord[]): Promise<void> {
+    // Legacy StorageManager doesn't support tabs - no-op
+  }
+
+  async deleteTabsForSpace(_spaceId: string, _kind: 'active' | 'closed'): Promise<void> {
+    // Legacy StorageManager doesn't support tabs - no-op
   }
 }

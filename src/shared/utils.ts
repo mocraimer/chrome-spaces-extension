@@ -52,7 +52,6 @@ const guards = {
     
     // Optional fields type checks
     const obj = x as any;
-    if (obj.customName !== undefined && typeof obj.customName !== 'string') return false;
     if (obj.windowId !== undefined && typeof obj.windowId !== 'number') return false;
     if (obj.sourceWindowId !== undefined && typeof obj.sourceWindowId !== 'string') return false;
     if (obj.lastSync !== undefined && typeof obj.lastSync !== 'number') return false;

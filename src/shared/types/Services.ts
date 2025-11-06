@@ -1,5 +1,16 @@
 import { Space } from './Space';
 
+export interface TabRecord {
+  id: string;
+  spaceId: string;
+  kind: 'active' | 'closed';
+  url: string;
+  index?: number;
+  pinned?: boolean;
+  title?: string;
+  createdAt: number;
+}
+
 export interface WindowManager {
   createWindow(urls: string[], options?: chrome.windows.CreateData): Promise<chrome.windows.Window>;
   closeWindow(windowId: number): Promise<void>;
@@ -19,6 +30,12 @@ export interface StorageManager {
   clear(): Promise<void>;
   exportData(): Promise<string>;
   importData(data: string): Promise<void>;
+  // Additional methods used by StateManager
+  createSpace(windowId: number, name: string, urls: string[], named?: boolean): Promise<Space>;
+  loadTabsForSpace(spaceId: string, kind: 'active' | 'closed'): Promise<TabRecord[]>;
+  saveTabsForSpace(spaceId: string, kind: 'active' | 'closed', tabs: TabRecord[]): Promise<void>;
+  deleteTabsForSpace(spaceId: string, kind: 'active' | 'closed'): Promise<void>;
+  updatePermanentIdMapping(windowId: number, permanentId: string): Promise<void>;
 }
 
 export interface TabManager {

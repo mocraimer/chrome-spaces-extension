@@ -1,13 +1,14 @@
-import { StateManager as IStateManager, QueuedStateUpdate } from '@/shared/types/Services';
+import { StateManager as IStateManager, QueuedStateUpdate, StorageManager as IStorageManager } from '@/shared/types/Services';
 import { MessageTypes } from '@/shared/constants';
 import { WindowManager } from './WindowManager';
 import { TabManager } from './TabManager';
-import { StorageManager } from './StorageManager';
 import { StateUpdateQueue, StateUpdatePriority } from './StateUpdateQueue';
 import { StateBroadcastService } from './StateBroadcastService';
 import { Space } from '@/shared/types/Space';
 import { DEFAULT_SPACE_NAME } from '@/shared/constants';
 import { PerformanceTrackingService, MetricCategories } from './performance/PerformanceTrackingService';
+import { generateUUID } from '@/shared/utils/uuid';
+import { preserveSpaceIdentity } from '@/shared/utils/spaceHelpers';
 
 export interface StateCache {
   timestamp: number;
@@ -39,7 +40,7 @@ export class StateManager implements IStateManager {
   constructor(
     private windowManager: WindowManager,
     private tabManager: TabManager,
-    private storageManager: StorageManager,
+    private storageManager: IStorageManager,
     private updateQueue: StateUpdateQueue,
     private broadcastService: StateBroadcastService
   ) {}
@@ -105,14 +106,14 @@ export class StateManager implements IStateManager {
     console.log('[StateManager] Loaded active spaces:', {
       count: Object.keys(this.spaces).length,
       spaceIds: Object.keys(this.spaces),
-      customNames: Object.entries(this.spaces).map(([id, space]) => ({ id, customName: space.customName }))
+      customNames: Object.entries(this.spaces).map(([id, space]) => ({ id, name: space.name, named: space.named }))
     });
 
     this.closedSpaces = await this.storageManager.loadClosedSpaces();
     console.log('[StateManager] Loaded closed spaces:', {
       count: Object.keys(this.closedSpaces).length,
       spaceIds: Object.keys(this.closedSpaces),
-      customNames: Object.entries(this.closedSpaces).map(([id, space]) => ({ id, customName: space.customName }))
+      customNames: Object.entries(this.closedSpaces).map(([id, space]) => ({ id, name: space.name, named: space.named }))
     });
 
     // CRITICAL FIX: Reset all active states on startup
@@ -219,14 +220,11 @@ export class StateManager implements IStateManager {
         throw new Error('Window has no ID');
       }
 
-      const updatedSpace: Space = {
-        ...space,
+      const updatedSpace = preserveSpaceIdentity(space, {
         sourceWindowId: window.id.toString(),
         windowId: window.id, // Associate with the window
-        isActive: true, // Mark as active when window is assigned
-        lastModified: Date.now(),
-        version: space.version + 1
-      };
+        isActive: true // Mark as active when window is assigned
+      });
 
       // Validate state transition
       this.validateStateTransition(space, updatedSpace);
@@ -349,8 +347,8 @@ export class StateManager implements IStateManager {
       closedSpacesCount: Object.keys(this.closedSpaces).length,
       activeSpaceIds: Object.keys(this.spaces),
       closedSpaceIds: Object.keys(this.closedSpaces),
-      activeCustomNames: Object.entries(this.spaces).map(([id, space]) => ({ id, customName: space.customName })),
-      closedCustomNames: Object.entries(this.closedSpaces).map(([id, space]) => ({ id, customName: space.customName }))
+      activeCustomNames: Object.entries(this.spaces).map(([id, space]) => ({ id, name: space.name, named: space.named })),
+      closedCustomNames: Object.entries(this.closedSpaces).map(([id, space]) => ({ id, name: space.name, named: space.named }))
     });
 
     // CRITICAL FIX: Mark all spaces as inactive before shutdown
@@ -493,9 +491,8 @@ export class StateManager implements IStateManager {
           lastModified: Date.now(),
           lastSync: Date.now(),
           version: existingSpace.version + 1,
-          // CRITICAL: Preserve custom naming - don't override customName or name if they exist
-          name: existingSpace.customName || existingSpace.name, // Use custom name if set
-          customName: existingSpace.customName, // Preserve custom name
+          // CRITICAL: Preserve custom naming - don't override name if explicitly set
+          name: existingSpace.name,
           named: existingSpace.named // Preserve named status
         };
       } else {
@@ -577,7 +574,7 @@ export class StateManager implements IStateManager {
         name: trimmedName,
         lastModified: Date.now(),
         version: space.version + 1,
-        named: true
+        named: true  // Mark as explicitly named by user
       };
 
       // Validate state transition
@@ -653,8 +650,8 @@ export class StateManager implements IStateManager {
 
       // Create new space using StorageManager
       const name = options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${spaceId}`;
-      const customName = options?.named ? name : undefined;
-      const space = await (this.storageManager as any).createSpace(windowId, name, urls, customName);
+      const named = options?.named || false;
+      const space = await (this.storageManager as any).createSpace(windowId, name, urls, named);
 
       // Atomic update
       const updatedSpaces = { ...this.spaces, [spaceId]: space };
@@ -681,26 +678,42 @@ export class StateManager implements IStateManager {
     }
 
     // Snapshot current tabs and filter out chrome://
-    const tabs = await this.tabManager.getTabs(windowId);
-    const urls = tabs
+    let tabs: chrome.tabs.Tab[] = [];
+    try {
+      tabs = await this.tabManager.getTabs(windowId);
+    } catch (error) {
+      console.log('[StateManager] Could not retrieve tabs from window (likely already closed):', error);
+    }
+
+    let urls = tabs
       .map(tab => this.tabManager.getTabUrl(tab))
       .filter(url => url && !url.startsWith('chrome://'));
 
+    // Fallback to existing space URLs if window is already closed
+    if (urls.length === 0 && space.urls && space.urls.length > 0) {
+      console.log('[StateManager] Using existing space URLs as fallback:', space.urls.length, 'tabs');
+      urls = space.urls;
+    }
+
     // Generate a new UUID for the closed space
-    const closedSpaceId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const closedSpaceId = generateUUID('closed-space');
 
     // Remove from active and add to closed under UUID key
     delete this.spaces[activeSpaceId];
-    const closedSpace: Space = {
-      ...space,
+    const closedSpace = preserveSpaceIdentity(space, {
       id: closedSpaceId,
       urls,
       windowId: undefined,
-      isActive: false,
-      lastModified: Date.now(),
-      version: space.version + 1,
-    };
+      isActive: false
+    });
     this.closedSpaces[closedSpaceId] = closedSpace;
+
+    console.log(`[StateManager] Closed space data:`, {
+      id: closedSpaceId,
+      name: closedSpace.name,
+      urlsCount: closedSpace.urls.length,
+      named: closedSpace.named
+    });
 
     // Persist tabs for the closed space and update stores atomically-ish
     await Promise.all([
@@ -708,7 +721,7 @@ export class StateManager implements IStateManager {
         closedSpaceId,
         'closed',
         urls.map((url, index) => ({
-          id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`),
+          id: generateUUID('tab'),
           spaceId: closedSpaceId,
           kind: 'closed',
           url,
@@ -778,16 +791,20 @@ export class StateManager implements IStateManager {
         }
       }
 
-      const updatedSpace: Space = {
-        ...space,
+      const updatedSpace = preserveSpaceIdentity(space, {
         id: targetActiveId,
         urls,
         windowId: windowId, // Associate with new window if provided
         isActive: true, // Mark as active when restored
-        sourceWindowId: windowId?.toString() || space.sourceWindowId,
-        lastModified: Date.now(),
-        version: (space.version || 0) + 1
-      };
+        sourceWindowId: windowId?.toString() || space.sourceWindowId
+      });
+
+      console.log(`[StateManager] Restored space data:`, {
+        id: targetActiveId,
+        name: updatedSpace.name,
+        urlsCount: updatedSpace.urls.length,
+        named: updatedSpace.named
+      });
 
       // Validate state transition when not changing id; skip when re-keying
       if (!fromClosedSpaces || targetActiveId === space.id) {
@@ -811,7 +828,7 @@ export class StateManager implements IStateManager {
               targetActiveId,
               'active',
               (closedTabs || []).map((t: any, idx: number) => ({
-                id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`),
+                id: generateUUID('tab'),
                 spaceId: targetActiveId,
                 kind: 'active',
                 url: t.url,
@@ -892,15 +909,12 @@ export class StateManager implements IStateManager {
       console.log(`[StateManager] Re-keying space from ${oldSpaceId} to ${newSpaceId}`);
 
       // Create updated space with new IDs
-      const updatedSpace: Space = {
-        ...space,
+      const updatedSpace = preserveSpaceIdentity(space, {
         id: newSpaceId,
         sourceWindowId: newSpaceId,
         windowId: newWindowId,
-        isActive: true,
-        lastModified: Date.now(),
-        version: space.version + 1
-      };
+        isActive: true
+      });
 
       // Remove from old location
       const updatedSpaces = { ...this.spaces };
@@ -923,7 +937,7 @@ export class StateManager implements IStateManager {
             newSpaceId,
             'active',
             closedTabs.map((t: any, idx: number) => ({
-              id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`),
+              id: generateUUID('tab'),
               spaceId: newSpaceId,
               kind: 'active',
               url: t.url,
@@ -984,8 +998,8 @@ export class StateManager implements IStateManager {
 
       // Verify the update was persisted
       const updatedSpace = this.spaces[spaceId] || this.closedSpaces[spaceId];
-      if (updatedSpace && updatedSpace.customName !== trimmedName) {
-        throw new Error('Failed to persist custom name to storage');
+      if (updatedSpace && updatedSpace.name !== trimmedName) {
+        throw new Error('Failed to persist name to storage');
       }
 
       // Invalidate cache

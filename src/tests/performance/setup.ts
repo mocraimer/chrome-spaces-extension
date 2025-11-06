@@ -103,23 +103,27 @@ const eventListeners = {
 };
 
 // Create mock functions
-const createWindow = jest.fn((urls: unknown, options: ChromeCreateWindowOptions = {}) => {
-  if (!isStringArray(urls)) {
+const createWindow = jest.fn((createData: chrome.windows.CreateData = {}) => {
+  const inputUrls = createData.url;
+  const urls = Array.isArray(inputUrls)
+    ? inputUrls
+    : typeof inputUrls === 'string'
+      ? [inputUrls]
+      : [];
+
+  if (!isStringArray(urls) || urls.length === 0) {
     throw new Error('urls must be an array of strings');
-  }
-  if (!Array.isArray(urls)) {
-    throw new Error('urls.map is not a function');
   }
 
   const window = createMockWindow();
   window.tabs = urls.map(url => createMockTab(window.id, String(url)));
-  
+
   const result = {
     ...window,
-    ...(options as object), // Type assertion for spread
-    url: urls[0], // Chrome API expects url in options
+    ...(createData as object),
+    url: urls[0],
   };
-  
+
   return Promise.resolve(result);
 });
 
@@ -190,23 +194,27 @@ beforeEach(() => {
   eventListeners.disconnect.clear();
 
   // Reset mock implementations
-  createWindow.mockImplementation((urls: unknown, options: ChromeCreateWindowOptions = {}) => {
-    if (!isStringArray(urls)) {
+  createWindow.mockImplementation((createData: chrome.windows.CreateData = {}) => {
+    const inputUrls = createData.url;
+    const urls = Array.isArray(inputUrls)
+      ? inputUrls
+      : typeof inputUrls === 'string'
+        ? [inputUrls]
+        : [];
+
+    if (!isStringArray(urls) || urls.length === 0) {
       throw new Error('urls must be an array of strings');
-    }
-    if (!Array.isArray(urls)) {
-      throw new Error('urls.map is not a function');
     }
 
     const window = createMockWindow();
     window.tabs = urls.map(url => createMockTab(window.id, String(url)));
-    
+
     const result = {
       ...window,
-      ...(options as object),
+      ...(createData as object),
       url: urls[0],
     };
-    
+
     return Promise.resolve(result);
   });
 

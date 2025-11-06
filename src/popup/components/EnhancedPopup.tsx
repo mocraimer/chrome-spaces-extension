@@ -308,13 +308,13 @@ const EnhancedPopup: React.FC = () => {
   // Filter spaces based on search
   const filteredSpaces = spaces.filter(space => {
     if (!searchTerm) return true;
-    const displayName = space.customName || space.name;
+    const displayName = space.name;
     return displayName.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   const filteredClosedSpaces = closedSpaces.filter(space => {
     if (!searchTerm) return true;
-    const displayName = space.customName || space.name;
+    const displayName = space.name;
     return displayName.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
@@ -467,7 +467,7 @@ const EnhancedPopup: React.FC = () => {
 
   const startEditing = (space: Space | ClosedSpace) => {
     setEditingSpaceId(space.id);
-    setEditingName(space.customName || space.name);
+    setEditingName(space.name);
   };
 
   const handleSaveEdit = async () => {
@@ -623,7 +623,7 @@ const EnhancedPopup: React.FC = () => {
             const isActive = 'windowId' in space;
             const isCurrent = isActive && space.windowId === currentWindowId;
             const isSelected = index === selectedIndex;
-            const displayName = space.customName || space.name;
+            const displayName = space.name;
             
             return (
               <div 

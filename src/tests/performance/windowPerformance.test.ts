@@ -8,17 +8,12 @@ describe('Window Performance Tests', () => {
   const THRESHOLDS = {
     WINDOW_CREATE_SMALL: 200,  // 200ms for spaces with <=10 tabs
     WINDOW_CREATE_LARGE: 500,  // 500ms for spaces with >10 tabs
-    STATE_SYNC: 100,          // 100ms for state sync
-    POPUP_INTERACTION: 16     // 16ms for 60fps smoothness
+    STATE_SYNC: 100,           // 100ms for state sync
+    POPUP_INTERACTION: 16      // 16ms for 60fps smoothness
   };
 
   beforeEach(() => {
     performanceMonitor.clear();
-    jest.useFakeTimers();
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
   });
 
   describe('Window Creation Performance', () => {

@@ -137,12 +137,13 @@ export class MessageHandler implements IMessageHandler {
     try {
       // Get space info before restoration
       const space = await this.stateManager.getSpaceById(spaceId);
-      if (!space?.urls.length) {
-        return { success: false, error: 'Invalid space or no URLs' };
+      if (!space) {
+        return { success: false, error: 'Invalid space' };
       }
 
       // Create new window with ALL URLs at once - WindowManager handles multiple tabs efficiently
-      const window = await this.windowManager.createWindow(space.urls);
+      // If urls is empty, restoreSpace() will load tabs from storage as fallback
+      const window = await this.windowManager.createWindow(space.urls || []);
 
       if (!window.id) {
         return { success: false, error: 'Failed to create window' };

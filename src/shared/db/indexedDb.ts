@@ -1,4 +1,5 @@
 import { openDB, IDBPDatabase } from 'idb';
+import { TabRecord } from '../types/Services';
 
 export const DB_NAME = 'chrome-spaces';
 export const DB_VERSION = 2; // v1: spaces/closedSpaces/meta; v2: tabs + index
@@ -25,15 +26,7 @@ export async function getDb(): Promise<IDBPDatabase> {
   return cachedDb;
 }
 
-export type TabRecord = {
-  id: string;
-  spaceId: string;
-  kind: 'active' | 'closed';
-  url: string;
-  index?: number;
-  pinned?: boolean;
-  title?: string;
-  createdAt: number;
-};
+// Re-export TabRecord for convenience
+export type { TabRecord };
 
 

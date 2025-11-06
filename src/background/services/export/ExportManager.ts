@@ -96,7 +96,6 @@ export class ExportManager {
       lastUsed: space.lastUsed || space.lastModified,
       isActive: space.isActive ?? true,
       // Optional fields
-      customName: space.customName,
       windowId: space.windowId,
       sourceWindowId: space.sourceWindowId,
       lastSync: space.lastSync

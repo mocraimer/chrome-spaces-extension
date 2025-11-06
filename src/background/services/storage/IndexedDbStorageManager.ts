@@ -1,8 +1,9 @@
-import { StorageManager as IStorageManager } from '@/shared/types/Services';
+import { StorageManager as IStorageManager, TabRecord } from '@/shared/types/Services';
 import { Space } from '@/shared/types/Space';
-import { getDb, TabRecord } from '@/shared/db/indexedDb';
+import { getDb } from '@/shared/db/indexedDb';
 import { STORAGE_KEY } from '@/shared/constants';
 import { executeChromeApi, typeGuards } from '@/shared/utils';
+import { generateUUID } from '@/shared/utils/uuid';
 
 export class IndexedDbStorageManager implements IStorageManager {
   private bootstrapped = false;
@@ -47,16 +48,15 @@ export class IndexedDbStorageManager implements IStorageManager {
       // Derive tabs from urls for both active and closed
       const tabsStore = tx.objectStore('tabs');
       const now = Date.now();
-      const makeId = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
       for (const s of Object.values(spaces)) {
         for (let i = 0; i < s.urls.length; i++) {
-          await tabsStore.put({ id: makeId(), spaceId: s.id, kind: 'active', url: s.urls[i], index: i, createdAt: now } as TabRecord);
+          await tabsStore.put({ id: generateUUID('tab'), spaceId: s.id, kind: 'active', url: s.urls[i], index: i, createdAt: now } as TabRecord);
         }
       }
       for (const [oldId, s] of Object.entries(closedSpaces)) {
         // Keep same ID for bootstrap; later operations will use UUIDs
         for (let i = 0; i < s.urls.length; i++) {
-          await tabsStore.put({ id: makeId(), spaceId: oldId, kind: 'closed', url: s.urls[i], index: i, createdAt: now } as TabRecord);
+          await tabsStore.put({ id: generateUUID('tab'), spaceId: oldId, kind: 'closed', url: s.urls[i], index: i, createdAt: now } as TabRecord);
         }
       }
 
@@ -108,9 +108,20 @@ export class IndexedDbStorageManager implements IStorageManager {
     const db = await getDb();
     const all = await db.getAll('closedSpaces');
     const map: Record<string, Space> = {};
+
+    // Load tabs for each closed space to populate urls field
     for (const s of all) {
-      map[s.id] = s as Space;
+      const tabs = await this.loadTabsForSpace(s.id, 'closed');
+      const urls = tabs
+        .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+        .map(t => t.url);
+
+      map[s.id] = {
+        ...s,
+        urls  // Populate urls from tabs store
+      } as Space;
     }
+
     return map;
   }
 
@@ -199,20 +210,19 @@ export class IndexedDbStorageManager implements IStorageManager {
   }
 
   // Compatibility helpers expected by StateManager
-  async createSpace(windowId: number, name: string, urls: string[], customName?: string): Promise<Space> {
+  async createSpace(windowId: number, name: string, urls: string[], named: boolean = false): Promise<Space> {
     const id = windowId.toString();
     const now = Date.now();
     const space: Space = {
       id,
-      name: customName || name, // Use customName for name if provided
+      name,
       urls,
       lastModified: now,
-      named: !!customName,
+      named,
       version: 1,
       lastSync: now,
       sourceWindowId: id,
       permanentId: id, // initial mapping, may be updated later
-      customName,
       createdAt: now,
       lastUsed: now,
       isActive: true,
@@ -224,10 +234,9 @@ export class IndexedDbStorageManager implements IStorageManager {
     await tx.objectStore('spaces').put(space);
 
     // seed active tabs rows from urls
-    const makeId = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
     for (let i = 0; i < urls.length; i++) {
       const rec: TabRecord = {
-        id: makeId(),
+        id: generateUUID('tab'),
         spaceId: id,
         kind: 'active',
         url: urls[i],
@@ -241,29 +250,6 @@ export class IndexedDbStorageManager implements IStorageManager {
     return space;
   }
 
-  async updateSpaceCustomName(spaceId: string, customName: string): Promise<void> {
-    const db = await getDb();
-    const tx = db.transaction(['spaces', 'closedSpaces', 'meta'], 'readwrite');
-    const s = await tx.objectStore('spaces').get(spaceId);
-    if (s) {
-      s.customName = customName;
-      s.name = customName;
-      s.lastModified = Date.now();
-      s.version = (s.version || 0) + 1;
-      await tx.objectStore('spaces').put(s);
-    } else {
-      const cs = await tx.objectStore('closedSpaces').get(spaceId);
-      if (cs) {
-        cs.customName = customName;
-        cs.name = customName;
-        cs.lastModified = Date.now();
-        cs.version = (cs.version || 0) + 1;
-        await tx.objectStore('closedSpaces').put(cs);
-      }
-    }
-    await tx.objectStore('meta').put({ key: 'lastModified', value: Date.now() });
-    await tx.done;
-  }
 
   async updatePermanentIdMapping(windowId: number, permanentId: string): Promise<void> {
     const db = await getDb();

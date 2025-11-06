@@ -69,7 +69,6 @@ export const selectSpacesWithOptimisticUpdates = (state: RootState) => {
         updatedSpaces[spaceId] = {
           ...space,
           name: update.payload.name,
-          customName: update.payload.name,
           named: true
         };
       }

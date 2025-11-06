@@ -37,6 +37,12 @@ const OptionsLayout: React.FC<OptionsLayoutProps> = ({ children }) => {
             <ImportExport importExportService={importExportService} />
           </Section>
         )}
+        
+        {children && (
+          <Section aria-label="custom-content">
+            {children}
+          </Section>
+        )}
       </Main>
       <Footer>
         <FooterText>Chrome Spaces © {new Date().getFullYear()}</FooterText>

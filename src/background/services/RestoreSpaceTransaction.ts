@@ -24,7 +24,8 @@ export class RestoreSpaceTransaction {
   constructor(
     private windowManager: WindowManager,
     private stateManager: StateManager,
-    private tabManager: TabManager
+    private tabManager: TabManager,
+    private restoringWindowIds: Set<number>
   ) {}
 
   onStateChange(handler: StateChangeHandler): void {
@@ -102,6 +103,13 @@ export class RestoreSpaceTransaction {
   private async executeRestore(spaceId: string): Promise<void> {
     const space = await this.getSpaceWithRetry(spaceId);
 
+    console.log(`[RestoreSpaceTransaction] Restoring space:`, {
+      id: spaceId,
+      name: space.name,
+      named: space.named,
+      urls: space.urls.length
+    });
+
     // Create window with retry mechanism
     this.setState('CREATING_WINDOW');
     const window = await this.createWindowWithRetry(space.urls);
@@ -110,11 +118,36 @@ export class RestoreSpaceTransaction {
       throw new Error('Failed to create window with valid ID');
     }
 
-    // Re-key the space from old ID to new window ID
-    // This is crucial because window IDs change after browser restart
-    console.log(`[RestoreSpaceTransaction] Re-keying space ${spaceId} to new window ID ${window.id}`);
-    await this.stateManager.rekeySpace(spaceId, window.id);
-    // Tabs were created by createWindow; rekeySpace persisted active tab rows.
+    // Mark this window as being restored to prevent event handlers from creating a default space
+    console.log(`[RestoreSpaceTransaction] Marking window ${window.id} as restoring`);
+    this.restoringWindowIds.add(window.id);
+
+    try {
+      // Re-key the space from old ID to new window ID
+      // This is crucial because window IDs change after browser restart
+      console.log(`[RestoreSpaceTransaction] Re-keying space ${spaceId} to new window ID ${window.id}`);
+      await this.stateManager.rekeySpace(spaceId, window.id);
+      // Tabs were created by createWindow; rekeySpace persisted active tab rows.
+
+      // Verify the name was preserved
+      const restoredSpace = this.stateManager.getAllSpaces()[window.id.toString()];
+      console.log(`[RestoreSpaceTransaction] Rekey result:`, {
+        id: restoredSpace?.id,
+        name: restoredSpace?.name,
+        named: restoredSpace?.named
+      });
+
+      if (restoredSpace && restoredSpace.name !== space.name) {
+        console.error(`[RestoreSpaceTransaction] ⚠️ Name mismatch after rekey!`, {
+          before: space.name,
+          after: restoredSpace.name
+        });
+      }
+    } finally {
+      // Always clean up the restoration marker, even if there's an error
+      console.log(`[RestoreSpaceTransaction] Unmarking window ${window.id} as restoring`);
+      this.restoringWindowIds.delete(window.id);
+    }
   }
 
   private async getSpaceWithRetry(spaceId: string, maxRetries = 3): Promise<Space> {

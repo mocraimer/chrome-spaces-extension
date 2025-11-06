@@ -118,10 +118,11 @@ export class ImportManager {
   private processSpace(space: Space): Space {
     return {
       id: space.id,
-      name: space.name,
+      // Migrate legacy customName to name if present in imported data
+      name: (space as any).customName || space.name,
       urls: [...space.urls], // Create new array
       lastModified: space.lastModified,
-      named: space.named,
+      named: !!((space as any).customName) || space.named,
       version: space.version || 1, // Preserve version or set default
       // Required new fields
       permanentId: space.permanentId || `import_${space.id}_${Date.now()}`,
@@ -129,7 +130,6 @@ export class ImportManager {
       lastUsed: space.lastUsed || space.lastModified,
       isActive: false, // Imported spaces are initially inactive
       // Optional fields
-      customName: space.customName,
       windowId: space.windowId,
       sourceWindowId: space.sourceWindowId,
       lastSync: space.lastSync
