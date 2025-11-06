@@ -84,8 +84,8 @@ export class StateUpdateQueue {
   private compressStateDiff(update: QueuedStateUpdate): QueuedStateUpdate {
     if (!this.options.compressDiffs) return update;
 
-    // If this update supersedes a previous one for the same type, merge them
-    const existing = this.batchedUpdates.get(update.type);
+    // If this update supersedes a previous one for the same id, merge them
+    const existing = this.batchedUpdates.get(update.id);
     if (existing && existing.timestamp + this.options.batchWindow! > Date.now()) {
       return {
         ...update,
@@ -135,7 +135,7 @@ export class StateUpdateQueue {
 
       // Compress and batch non-critical updates
       const compressedUpdate = this.compressStateDiff(queuedUpdate);
-      this.batchedUpdates.set(compressedUpdate.type, compressedUpdate);
+      this.batchedUpdates.set(compressedUpdate.id, compressedUpdate);
 
       // Start or reset batch window timer
       if (this.batchTimeout) {
@@ -162,7 +162,23 @@ export class StateUpdateQueue {
    * Processes all queued updates atomically
    */
   public async processQueue(): Promise<void> {
-    if (this.processing || this.queue.length === 0) {
+    if (this.processing) {
+      return;
+    }
+
+    // First, move any batched updates to the queue
+    if (this.batchedUpdates.size > 0) {
+      const updates = Array.from(this.batchedUpdates.values());
+      this.batchedUpdates.clear();
+      if (this.batchTimeout) {
+        clearTimeout(this.batchTimeout);
+        this.batchTimeout = null;
+      }
+      this.queue.push(...updates);
+    }
+
+    // If queue is still empty after processing batched updates, return
+    if (this.queue.length === 0) {
       return;
     }
 
@@ -198,13 +214,18 @@ export class StateUpdateQueue {
   public clear(): void {
     this.queue = [];
     this.rollbackSnapshot = [];
+    this.batchedUpdates.clear();
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout);
+      this.batchTimeout = null;
+    }
   }
 
   /**
    * Returns current queue length
    */
   public get length(): number {
-    return this.queue.length;
+    return this.queue.length + this.batchedUpdates.size;
   }
 
   /**
@@ -232,10 +253,11 @@ export class StateUpdateQueue {
    */
   private sortUpdates(updates: QueuedStateUpdate[]): QueuedStateUpdate[] {
     return [...updates].sort((a, b) => {
-      // Sort by priority first (higher priority first)
-      const priorityDiff = (b.priority || 0) - (a.priority || 0);
+      // Sort by priority first (lower priority number = higher priority)
+      // CRITICAL=1 should come before HIGH=2, etc.
+      const priorityDiff = (a.priority || StateUpdatePriority.NORMAL) - (b.priority || StateUpdatePriority.NORMAL);
       if (priorityDiff !== 0) return priorityDiff;
-      
+
       // Then by timestamp
       return a.timestamp - b.timestamp;
     });

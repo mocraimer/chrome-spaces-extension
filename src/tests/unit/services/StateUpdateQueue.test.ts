@@ -51,9 +51,9 @@ describe('StateUpdateQueue', () => {
   describe('processQueue', () => {
     it('should process updates in priority order', async () => {
       const updates = [
-        { id: '1', type: 'TEST', payload: 'low', priority: 1 },
-        { id: '2', type: 'TEST', payload: 'high', priority: 2 },
-        { id: '3', type: 'TEST', payload: 'medium', priority: 1 }
+        { id: '1', type: 'TEST', payload: 'low', priority: 4 },     // LOW = 4
+        { id: '2', type: 'TEST', payload: 'high', priority: 2 },    // HIGH = 2
+        { id: '3', type: 'TEST', payload: 'medium', priority: 3 }   // NORMAL = 3
       ];
 
       const processedUpdates: QueuedStateUpdate[] = [];
@@ -73,9 +73,9 @@ describe('StateUpdateQueue', () => {
       await queue.processQueue();
       mockProcessUpdates.mockRestore();
 
-      expect(processedUpdates[0].id).toBe('2'); // High priority
-      expect(processedUpdates[1].id).toBe('1'); // Low priority, earlier timestamp
-      expect(processedUpdates[2].id).toBe('3'); // Low priority, later timestamp
+      expect(processedUpdates[0].id).toBe('2'); // HIGH priority (2)
+      expect(processedUpdates[1].id).toBe('3'); // NORMAL priority (3)
+      expect(processedUpdates[2].id).toBe('1'); // LOW priority (4)
     });
 
     it('should handle errors and rollback', async () => {
