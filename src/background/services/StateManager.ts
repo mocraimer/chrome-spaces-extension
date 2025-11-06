@@ -556,17 +556,32 @@ export class StateManager implements IStateManager {
   @PerformanceTrackingService.track(MetricCategories.STATE, 300)
   async setSpaceName(spaceId: string, name: string): Promise<void> {
     await this.acquireLock(spaceId);
-    
+
     try {
       const trimmedName = name.trim().replace(/\s+/g, ' ');
-      
+
       if (!trimmedName) {
         throw new Error('Space name cannot be empty');
       }
 
-      const space = await this.getSpaceById(spaceId);
+      // Ensure state is initialized and synchronized
+      await this.ensureInitialized();
+
+      // Check if space exists, if not try synchronizing first
+      let space = await this.getSpaceById(spaceId);
       if (!space) {
-        throw new Error(`Space not found: ${spaceId}`);
+        // Space might not exist yet, synchronize windows and spaces
+        await this.synchronizeWindowsAndSpaces();
+
+        // Invalidate cache to force fresh lookup after sync
+        this.invalidateCache(`space:${spaceId}`);
+
+        // Check directly in memory state after sync (don't use cache)
+        space = this.spaces[spaceId] || this.closedSpaces[spaceId] || null;
+
+        if (!space) {
+          throw new Error(`Space not found: ${spaceId}`);
+        }
       }
 
       const updatedSpace: Space = {

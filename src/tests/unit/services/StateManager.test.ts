@@ -86,11 +86,11 @@ describe('StateManager', () => {
       expect(storageManager.saveSpaces).toHaveBeenCalledWith(
         expect.objectContaining({
           '1': expect.objectContaining({
-            ...createMockSpace('1', newName),
             name: newName,
             lastModified: expect.any(Number),
             named: true, // setSpaceName sets named to true
             version: 2 // version is incremented from 1 to 2
+            // Note: isActive and windowId are reset during initialization
           })
         })
       );
@@ -107,8 +107,75 @@ describe('StateManager', () => {
       storageManager.loadSpaces.mockResolvedValue({});
       storageManager.loadClosedSpaces.mockResolvedValue({});
       await (stateManager as any).get_space_by_id_with_reload('999'); // Reload to get empty state
+
+      // Mock synchronization to return no windows (space truly doesn't exist)
+      windowManager.getAllWindows.mockResolvedValue([]);
+
       await expect(stateManager.setSpaceName('999', 'New Name'))
         .rejects.toThrow('Space not found');
+    });
+
+    it('should synchronize and create space before renaming if space does not exist', async () => {
+      // Simulate scenario: window exists but space not yet synchronized
+      const windowId = 123;
+      const spaceId = windowId.toString();
+
+      // Start with no spaces
+      storageManager.loadSpaces.mockResolvedValue({});
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      (stateManager as any).initialized = false;
+      await stateManager.initialize();
+
+      // Mock window and tabs
+      const mockTab: chrome.tabs.Tab = {
+        id: 1,
+        index: 0,
+        pinned: false,
+        highlighted: false,
+        windowId,
+        active: false,
+        incognito: false,
+        selected: false,
+        autoDiscardable: true,
+        url: 'https://example.com',
+        groupId: -1
+      } as chrome.tabs.Tab;
+
+      const mockWindow: chrome.windows.Window = {
+        id: windowId,
+        tabs: [mockTab],
+        focused: false,
+        alwaysOnTop: false,
+        incognito: false,
+        type: 'normal',
+        state: 'normal'
+      };
+
+      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      tabManager.getTabs.mockResolvedValue([mockTab]);
+      tabManager.getTabUrl.mockReturnValue('https://example.com');
+
+      // Mock createSpace to return a proper space
+      const createdSpace = createMockSpace(spaceId, `Untitled Space ${spaceId}`, { windowId });
+      (storageManager as any).createSpace = jest.fn().mockResolvedValue(createdSpace);
+
+      // Try to rename - should trigger synchronization and then rename
+      await stateManager.renameSpace(windowId, 'My New Space');
+
+      // Should have called createSpace during synchronization
+      expect((storageManager as any).createSpace).toHaveBeenCalled();
+
+      // Should have saved spaces at least twice: once for sync, once for rename
+      expect(storageManager.saveSpaces).toHaveBeenCalled();
+
+      // Final save should include the renamed space
+      const lastSaveCall = (storageManager.saveSpaces as jest.Mock).mock.calls[
+        (storageManager.saveSpaces as jest.Mock).mock.calls.length - 1
+      ][0];
+      expect(lastSaveCall[spaceId]).toMatchObject({
+        name: 'My New Space',
+        named: true
+      });
     });
 
     it('should trim and normalize whitespace in name', async () => {

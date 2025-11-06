@@ -1,0 +1,29 @@
+
+dev:
+  stop:
+    nodeSelector:
+      lemonade.com/nodeGroupName: okteto
+    tolerations:
+      - key: lemonade.com/nodeGroupName
+        value: okteto
+        effect: NoSchedule
+    command: /usr/local/bin/bootstrap.sh && zsh
+    image: 824464961347.dkr.ecr.eu-west-1.amazonaws.com/okteto-images-46f6939:nodejs-18
+    resources:
+      limits:
+        cpu: 4
+        memory: 8Gi
+        ephemeral-storage: 4Gi
+      requests:
+        cpu: "0.5"
+        memory: 3Gi
+        ephemeral-storage: 2Gi
+    persistentVolume:
+      enabled: true
+      storageClass: gp3
+      size: 10Gi
+    sync:
+      - .:/usr/src/app
+    environment:
+      GITHUB_NPM_TOKEN: \$GITHUB_NPM_TOKEN
+      NODE_TLS_REJECT_UNAUTHORIZED: 0

@@ -1,0 +1,24 @@
+
+  .git
+  pids
+  *.pid
+  *.seed
+  *.pid.lock
+  .okteto-*
+  lib-cov
+  .grunt
+  bower_components
+  .lock-wscript
+  build/Release
+  node_modules
+  jspm_packages
+  .npm
+  .eslintcache
+  .node_repl_history
+  *.tgz
+  .yarn-integrity
+  .cache
+  .next
+  .nuxt
+  .vuepress/dist
+  .serverless
