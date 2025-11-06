@@ -979,43 +979,8 @@ export class StateManager implements IStateManager {
   }
 
   async renameSpace(windowId: number, name: string): Promise<void> {
+    // Delegate to setSpaceName which has the full implementation
     const spaceId = windowId.toString();
-    await this.acquireLock(spaceId);
-
-    try {
-      const trimmedName = name.trim().replace(/\s+/g, ' ');
-
-      if (!trimmedName) {
-        throw new Error('Space name cannot be empty');
-      }
-
-      // Update custom name using StorageManager
-      await (this.storageManager as any).updateSpaceCustomName(spaceId, trimmedName);
-
-      // Reload spaces to get updated data from storage
-      this.spaces = await this.storageManager.loadSpaces();
-      this.closedSpaces = await this.storageManager.loadClosedSpaces();
-
-      // Verify the update was persisted
-      const updatedSpace = this.spaces[spaceId] || this.closedSpaces[spaceId];
-      if (updatedSpace && updatedSpace.name !== trimmedName) {
-        throw new Error('Failed to persist name to storage');
-      }
-
-      // Invalidate cache
-      this.invalidateCache(`space:${spaceId}`);
-      this.invalidateCache('spaces');
-      this.invalidateCache('closedSpaces');
-
-      this.broadcastStateUpdate();
-
-      console.log(`[StateManager] Successfully renamed space ${spaceId} to "${trimmedName}"`);
-    } catch (error) {
-      const errorMessage = `Failed to rename space: ${(error as Error).message}`;
-      console.error(`[StateManager] ${errorMessage}`);
-      throw new Error(errorMessage);
-    } finally {
-      this.releaseLock(spaceId);
-    }
+    await this.setSpaceName(spaceId, name);
   }
 }
