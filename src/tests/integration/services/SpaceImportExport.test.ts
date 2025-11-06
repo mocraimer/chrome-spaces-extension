@@ -5,6 +5,7 @@ import { TabManager } from '../../../background/services/TabManager';
 import { StorageManager } from '../../../background/services/StorageManager';
 import { Space } from '../../../shared/types/Space';
 import { SpaceExportData } from '../../../shared/types/ImportExport';
+import { createMockSpace } from '../../mocks/mockTypes';
 
 describe('Space Import/Export Integration', () => {
   let stateManager: StateManager;
@@ -13,14 +14,10 @@ describe('Space Import/Export Integration', () => {
   let storageManager: jest.Mocked<StorageManager>;
   let importExportService: SpaceImportExportService;
 
-  const mockSpace: Space = {
-    id: 'space-1',
-    name: 'Test Space',
+  const mockSpace: Space = createMockSpace('space-1', 'Test Space', {
     urls: ['https://example.com'],
-    lastModified: Date.now(),
-    named: true,
-    version: 1
-  };
+    named: true
+  });
 
   const mockState = {
     spaces: { 'space-1': mockSpace },

@@ -59,6 +59,10 @@ describe('Space Name Persistence Integration Tests', () => {
     lastModified: Date.now(),
     named: true,
     version: 1,
+    permanentId: 'perm_1',
+    createdAt: Date.now(),
+    lastUsed: Date.now(),
+    isActive: true,
     ...overrides
   });
 

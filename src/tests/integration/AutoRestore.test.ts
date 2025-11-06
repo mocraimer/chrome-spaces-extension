@@ -1,6 +1,5 @@
 import { jest } from '@jest/globals';
-import { StateManager } from '../../../background/services/StateManager';
-import { BackgroundService } from '../../../background';
+import { StateManager } from '@/background/services/StateManager';
 import {
   createWindowManagerMock,
   createTabManagerMock,
@@ -8,8 +7,7 @@ import {
   createStateUpdateQueueMock,
   createStateBroadcastServiceMock,
   createPerformanceTrackingServiceMock,
-} from '../../utils/serviceMocks';
-import { IStateManager } from '@/shared/types/Services';
+} from '../utils/serviceMocks';
 
 /**
  * @file This file contains integration tests for the auto-restore functionality
@@ -18,8 +16,7 @@ import { IStateManager } from '@/shared/types/Services';
  */
 
 describe('Browser Startup Auto-Restore Tests', () => {
-  let stateManager: IStateManager;
-  let backgroundService: BackgroundService;
+  let stateManager: StateManager;
   let storageManager: any;
 
   beforeEach(() => {
@@ -45,8 +42,6 @@ describe('Browser Startup Auto-Restore Tests', () => {
     storageManager.loadSettings.mockResolvedValue({
       general: { autoRestore: true },
     });
-
-    backgroundService = new BackgroundService(stateManager);
 
     // Mock chrome APIs
     global.chrome = {
@@ -76,10 +71,10 @@ describe('Browser Startup Auto-Restore Tests', () => {
       '3': { id: '3', name: 'Personal', named: true, urls: ['https://c.com'] },
     };
     storageManager.loadClosedSpaces.mockResolvedValue(closedSpaces);
-    const restoreSpaceSpy = jest.spyOn(stateManager, 'restoreSpace');
+    const restoreSpaceSpy = jest.spyOn(stateManager, 'restoreSpace').mockResolvedValue();
 
-    // Act: Simulate browser startup
-    await backgroundService['handleStartup']();
+    // Act: Simulate browser startup - call restoreSpaces directly
+    await stateManager.initialize();
 
     // Assert
     // Verify that only named spaces were restored
@@ -94,10 +89,10 @@ describe('Browser Startup Auto-Restore Tests', () => {
     storageManager.loadSettings.mockResolvedValue({
       general: { autoRestore: false },
     });
-    const restoreSpaceSpy = jest.spyOn(stateManager, 'restoreSpace');
+    const restoreSpaceSpy = jest.spyOn(stateManager, 'restoreSpace').mockResolvedValue();
 
     // Act
-    await backgroundService['handleStartup']();
+    await stateManager.initialize();
 
     // Assert
     expect(restoreSpaceSpy).not.toHaveBeenCalled();
@@ -117,10 +112,10 @@ describe('Browser Startup Auto-Restore Tests', () => {
           throw new Error('Failed to restore');
         }
       });
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     // Act
-    await backgroundService['handleStartup']();
+    await stateManager.initialize();
 
     // Assert
     // Should attempt to restore both, even if one fails

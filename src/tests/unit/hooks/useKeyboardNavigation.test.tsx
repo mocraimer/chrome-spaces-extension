@@ -21,13 +21,13 @@ global.window.close = mockWindowClose;
 
 describe('useKeyboardNavigation Hook', () => {
   const mockSpaces = {
-    '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now(), named: false, version: 1 },
-    '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now(), named: false, version: 1 },
-    '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now(), named: false, version: 1 }
+    '1': { id: '1', name: 'Space 1', urls: [], lastModified: Date.now(), named: false, version: 1, permanentId: 'perm_1', createdAt: Date.now(), lastUsed: Date.now(), isActive: true },
+    '2': { id: '2', name: 'Space 2', urls: [], lastModified: Date.now(), named: false, version: 1, permanentId: 'perm_2', createdAt: Date.now(), lastUsed: Date.now(), isActive: true },
+    '3': { id: '3', name: 'Space 3', urls: [], lastModified: Date.now(), named: false, version: 1, permanentId: 'perm_3', createdAt: Date.now(), lastUsed: Date.now(), isActive: true }
   };
 
   const mockClosedSpaces = {
-    '4': { id: '4', name: 'Closed Space 1', urls: [], lastModified: Date.now(), named: false, version: 1 }
+    '4': { id: '4', name: 'Closed Space 1', urls: [], lastModified: Date.now(), named: false, version: 1, permanentId: 'perm_4', createdAt: Date.now(), lastUsed: Date.now(), isActive: false }
   };
 
   let store: any;

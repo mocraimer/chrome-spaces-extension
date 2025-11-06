@@ -2,6 +2,7 @@ import { ImportManager } from '../../../background/services/import/ImportManager
 import { ValidationEngine } from '../../../background/services/validation/ValidationEngine';
 import { Space } from '../../../shared/types/Space';
 import { SpaceExportData } from '../../../shared/types/ImportExport';
+import { createMockSpace } from '../../mocks/mockTypes';
 
 describe('ImportManager', () => {
   let importManager: ImportManager;
@@ -11,14 +12,10 @@ describe('ImportManager', () => {
   };
   let mockValidationEngine: jest.Mocked<ValidationEngine>;
   
-  const mockSpace: Space = {
-    id: 'space-1',
-    name: 'Test Space',
+  const mockSpace: Space = createMockSpace('space-1', 'Test Space', {
     urls: ['https://example.com'],
-    lastModified: Date.now(),
-    named: true,
-    version: 1
-  };
+    named: true
+  });
 
   const mockExportData: SpaceExportData = {
     version: '1.0.0',
@@ -177,7 +174,7 @@ describe('ImportManager', () => {
     it('should not replace existing spaces by default', async () => {
       // Arrange
       mockStateManager.getState.mockReturnValue({
-        spaces: { 'space-1': { ...mockSpace, name: 'Existing Space' } },
+        spaces: { 'space-1': createMockSpace('space-1', 'Existing Space') },
         closedSpaces: {},
         currentWindowId: null,
         isLoading: false,
@@ -196,7 +193,7 @@ describe('ImportManager', () => {
     it('should replace existing spaces when replaceExisting is true', async () => {
       // Arrange
       mockStateManager.getState.mockReturnValue({
-        spaces: { 'space-1': { ...mockSpace, name: 'Existing Space' } },
+        spaces: { 'space-1': createMockSpace('space-1', 'Existing Space') },
         closedSpaces: {},
         currentWindowId: null,
         isLoading: false,

@@ -33,10 +33,10 @@ describe('State Synchronization Tests for Space Title Reversion', () => {
   };
 
   const mockChromeApi = () => {
-    const mockSendMessage = jest.fn();
+    const mockSendMessage = jest.fn<Promise<any>, [any, ((response: any) => void)?]>();
     global.chrome = {
       runtime: {
-        sendMessage: mockSendMessage,
+        sendMessage: mockSendMessage as any,
         onConnect: {
           addListener: jest.fn()
         }
@@ -63,7 +63,11 @@ describe('State Synchronization Tests for Space Title Reversion', () => {
             version: 1,
             lastSync: Date.now(),
             sourceWindowId: '1',
-            named: false
+            named: false,
+            permanentId: 'perm_1',
+            createdAt: Date.now(),
+            lastUsed: Date.now(),
+            isActive: true
           }
         },
         closedSpaces: {},
@@ -72,7 +76,12 @@ describe('State Synchronization Tests for Space Title Reversion', () => {
         error: null,
         selectedSpaceId: '1',
         searchQuery: '',
-        editMode: false
+        editMode: false,
+        optimisticUpdates: {},
+        actionQueue: [],
+        lastSyncTimestamp: Date.now(),
+        syncInProgress: false,
+        operationErrors: {}
       }
     };
 

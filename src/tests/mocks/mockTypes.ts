@@ -2,8 +2,15 @@ import type { Space } from '@/shared/types/Space';
 
 /**
  * Creates a mock Space object with specified ID and name
+ * @param id - Space ID
+ * @param name - Space name
+ * @param options - Optional overrides for specific fields
  */
-export const createMockSpace = (id: string, name: string): Space => ({
+export const createMockSpace = (
+  id: string,
+  name: string,
+  options?: Partial<Space>
+): Space => ({
   id,
   name,
   urls: [],
@@ -17,7 +24,9 @@ export const createMockSpace = (id: string, name: string): Space => ({
   createdAt: Date.now(),
   lastUsed: Date.now(),
   isActive: true,
-  windowId: parseInt(id, 10)
+  windowId: parseInt(id, 10),
+  // Apply any overrides
+  ...options
 });
 
 export const mockSpaces: Record<string, Space> = {

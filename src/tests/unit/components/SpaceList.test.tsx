@@ -17,7 +17,11 @@ describe('SpaceList', () => {
       urls: ['https://test1.com'],
       lastModified: Date.now(),
       named: false,
-      version: 1
+      version: 1,
+      permanentId: 'perm_space-1',
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      isActive: true
     },
     'space-2': {
       id: 'space-2',
@@ -25,7 +29,11 @@ describe('SpaceList', () => {
       urls: ['https://test2.com', 'https://test3.com'],
       lastModified: Date.now(),
       named: false,
-      version: 1
+      version: 1,
+      permanentId: 'perm_space-2',
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      isActive: true
     }
   };
 

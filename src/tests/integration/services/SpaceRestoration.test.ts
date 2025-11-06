@@ -36,7 +36,8 @@ describe('Space Restoration Integration Tests', () => {
     restoreSpaceTransaction = new RestoreSpaceTransaction(
       windowManager,
       stateManager,
-      tabManager
+      tabManager,
+      new Set<number>()
     );
 
     // Mock window creation
@@ -149,7 +150,11 @@ describe('Space Restoration Integration Tests', () => {
         version: 1,
         lastSync: Date.now(),
         sourceWindowId: mockWindowId.toString(),
-        named: false
+        named: false,
+        permanentId: `perm_${mockWindowId}`,
+        createdAt: Date.now(),
+        lastUsed: Date.now(),
+        isActive: true
       };
 
       jest.spyOn(stateManager, 'getSpaceById').mockResolvedValue(space);
@@ -171,7 +176,11 @@ describe('Space Restoration Integration Tests', () => {
         version: 1,
         lastSync: Date.now(),
         sourceWindowId: mockWindowId.toString(),
-        named: false
+        named: false,
+        permanentId: `perm_${mockWindowId}`,
+        createdAt: Date.now(),
+        lastUsed: Date.now(),
+        isActive: true
       };
 
       jest.spyOn(stateManager, 'getSpaceById').mockResolvedValue(space);

@@ -11,7 +11,11 @@ describe('ValidationEngine', () => {
     urls: ['https://example.com'],
     lastModified: Date.now(),
     named: true,
-    version: 1
+    version: 1,
+    permanentId: 'perm_space-1',
+    createdAt: Date.now(),
+    lastUsed: Date.now(),
+    isActive: true
   };
 
   const validExportData: SpaceExportData = {

@@ -61,7 +61,12 @@ export const createStorageManagerMock = (): MockedObject<StorageManager> => {
     loadClosedSpaces: jest.fn(),
     clear: jest.fn(),
     exportData: jest.fn(),
-    importData: jest.fn()
+    importData: jest.fn(),
+    createSpace: jest.fn(),
+    loadTabsForSpace: jest.fn(),
+    saveTabsForSpace: jest.fn(),
+    deleteTabsForSpace: jest.fn(),
+    updatePermanentIdMapping: jest.fn()
   };
 };
 

@@ -41,6 +41,10 @@ describe('Space Name Validation Tests', () => {
     lastModified: Date.now(),
     named: true,
     version: 1,
+    permanentId: 'perm_1',
+    createdAt: Date.now(),
+    lastUsed: Date.now(),
+    isActive: true,
     ...overrides
   });
 

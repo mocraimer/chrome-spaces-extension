@@ -4,6 +4,7 @@ import { StateManager as StateManagerImpl } from '../../../background/services/S
 import { TabManager as TabManagerImpl } from '../../../background/services/TabManager';
 import type { Space } from '../../../shared/types/Space';
 import { createWindowManagerMock, createStateManagerMock, createTabManagerMock } from '../../utils/serviceMocks';
+import { createMockSpace } from '../../mocks/mockTypes';
 
 jest.mock('../../../background/services/WindowManager');
 jest.mock('../../../background/services/StateManager');
@@ -15,16 +16,10 @@ describe('RestoreSpaceTransaction', () => {
   let stateManager: jest.Mocked<StateManagerImpl>;
   let tabManager: jest.Mocked<TabManagerImpl>;
 
-  const mockSpaceData: Space = {
-    id: '1',
-    name: 'Test Space',
+  const mockSpaceData: Space = createMockSpace('1', 'Test Space', {
     urls: ['https://example.com'],
-    lastModified: Date.now(),
-    version: 1,
-    lastSync: Date.now(),
-    sourceWindowId: '1',
     named: false
-  };
+  });
 
   const mockWindow: chrome.windows.Window = {
     id: 1,
@@ -64,7 +59,8 @@ describe('RestoreSpaceTransaction', () => {
     restoreSpaceTransaction = new RestoreSpaceTransaction(
       windowManager,
       stateManager,
-      tabManager
+      tabManager,
+      new Set<number>()
     );
   });
 
@@ -124,10 +120,10 @@ describe('RestoreSpaceTransaction', () => {
 
   describe('tab restoration', () => {
     it('should restore all tabs in correct order', async () => {
-      const mockSpaceWithMultipleTabs: Space = {
-        ...mockSpaceData,
-        urls: ['https://example1.com', 'https://example2.com']
-      };
+      const mockSpaceWithMultipleTabs: Space = createMockSpace('1', 'Test Space', {
+        urls: ['https://example1.com', 'https://example2.com'],
+        named: false
+      });
       stateManager.getSpaceById.mockResolvedValue(mockSpaceWithMultipleTabs);
 
       await restoreSpaceTransaction.restore('1');

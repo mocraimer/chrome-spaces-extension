@@ -15,7 +15,11 @@ describe('SpaceItem', () => {
     urls: ['https://test1.com'],
     lastModified: Date.now(),
     named: false,
-    version: 1
+    version: 1,
+    permanentId: 'perm_test-space-1',
+    createdAt: Date.now(),
+    lastUsed: Date.now(),
+    isActive: true
   };
 
   const mockOnSwitchClick = jest.fn();

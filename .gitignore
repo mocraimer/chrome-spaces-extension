@@ -66,3 +66,5 @@ CLAUDE.md
 .test-user-data-simple/
 .test-user-data-persistence/
 .test-user-data-closed-spaces/
+.test-user-data-diagnostic/
+diagnostic-test-log.json

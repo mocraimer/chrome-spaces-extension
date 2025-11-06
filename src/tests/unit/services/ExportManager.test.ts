@@ -1,6 +1,7 @@
 import { ExportManager } from '../../../background/services/export/ExportManager';
 import { Space, SpaceState } from '../../../shared/types/Space';
 import { ExportOptions, SpaceExportData } from '../../../shared/types/ImportExport';
+import { createMockSpace } from '../../mocks/mockTypes';
 
 describe('ExportManager', () => {
   let exportManager: ExportManager;
@@ -8,18 +9,14 @@ describe('ExportManager', () => {
     getState: jest.Mock;
   };
 
-  const mockSpace: Space = {
-    id: 'space-1',
-    name: 'Test Space',
+  const mockSpace: Space = createMockSpace('space-1', 'Test Space', {
     urls: ['https://example.com'],
-    lastModified: Date.now(),
-    named: true,
-    version: 1
-  };
+    named: true
+  });
 
   const mockState: SpaceState = {
     spaces: { 'space-1': mockSpace },
-    closedSpaces: { 'space-2': { ...mockSpace, id: 'space-2' } },
+    closedSpaces: { 'space-2': createMockSpace('space-2', 'Test Space') },
     currentWindowId: null,
     isLoading: false,
     error: null

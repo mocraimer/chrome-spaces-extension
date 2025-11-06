@@ -19,6 +19,10 @@ const createMockSpace = (overrides: Partial<Space> = {}): Space => ({
   lastModified: Date.now(),
   named: true,
   version: 1,
+  permanentId: 'perm_1',
+  createdAt: Date.now(),
+  lastUsed: Date.now(),
+  isActive: true,
   ...overrides
 });
 
@@ -37,6 +41,11 @@ const createMockStore = (initialState = {}) => {
         selectedSpaceId: null,
         searchQuery: '',
         editMode: false,
+        optimisticUpdates: {},
+        actionQueue: [],
+        lastSyncTimestamp: Date.now(),
+        syncInProgress: false,
+        operationErrors: {},
         ...initialState
       }
     }
