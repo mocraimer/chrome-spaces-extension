@@ -23,6 +23,10 @@ export class StateManager implements IStateManager {
   private updateLock = new Map<string, Promise<void>>();
   private lockResolvers = new Map<string, () => void>();
 
+  // Track spaces that were recently restored and need protection from validation
+  // Map: spaceId -> { windowId, restoredAt, originalName }
+  private recentlyRestoredSpaces = new Map<string, { windowId: number; restoredAt: number; originalName: string }>();
+
   // Cache configuration
   private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private static readonly INCREMENTAL_UPDATE_THRESHOLD = 10; // Number of changes before full sync
@@ -152,6 +156,43 @@ export class StateManager implements IStateManager {
     if (!this.initialized) {
       await this.initialize();
     }
+  }
+
+  /**
+   * Mark a space as recently restored to protect it from premature validation.
+   * This gate prevents synchronization from interfering before tabs fully load.
+   */
+  private markSpaceAsRestored(spaceId: string, windowId: number, originalName: string): void {
+    console.log(`[StateManager] Marking space ${spaceId} (window ${windowId}) as recently restored with name "${originalName}"`);
+    this.recentlyRestoredSpaces.set(spaceId, {
+      windowId,
+      restoredAt: Date.now(),
+      originalName
+    });
+  }
+
+  /**
+   * Clear the restoration gate for a space and clean up window restoration marker.
+   * Called after successful validation during synchronization.
+   */
+  private clearRestorationGate(spaceId: string): void {
+    const restorationInfo = this.recentlyRestoredSpaces.get(spaceId);
+    if (restorationInfo) {
+      console.log(`[StateManager] ✅ Clearing restoration gate for space ${spaceId} - validation successful`);
+      this.recentlyRestoredSpaces.delete(spaceId);
+      // Also remove from restoringWindowIds if present
+      if (this.restoringWindowIds?.has(restorationInfo.windowId)) {
+        console.log(`[StateManager] Removing window ${restorationInfo.windowId} from restoringWindowIds`);
+        this.restoringWindowIds.delete(restorationInfo.windowId);
+      }
+    }
+  }
+
+  /**
+   * Check if a space is recently restored and should skip validation.
+   */
+  private isRecentlyRestored(spaceId: string): boolean {
+    return this.recentlyRestoredSpaces.has(spaceId);
   }
 
   getAllSpaces(): Record<string, Space> {
@@ -486,11 +527,19 @@ export class StateManager implements IStateManager {
           continue;
         }
 
-        // Validate that this window actually belongs to the space
-        const isValidWindow = await this.validateWindowOwnership(existingSpace, window);
-        if (!isValidWindow) {
-          console.log(`[StateManager] Window ${window.id} doesn't belong to space ${existingSpace.id} - window ID reused`);
-          continue;
+        // RESTORATION GATE: Skip validation for recently restored spaces
+        // Tabs may not be fully loaded yet, validation would fail and destroy the restored space
+        const isRestored = this.isRecentlyRestored(existingSpace.id);
+
+        if (!isRestored) {
+          // Validate that this window actually belongs to the space
+          const isValidWindow = await this.validateWindowOwnership(existingSpace, window);
+          if (!isValidWindow) {
+            console.log(`[StateManager] Window ${window.id} doesn't belong to space ${existingSpace.id} - window ID reused`);
+            continue;
+          }
+        } else {
+          console.log(`[StateManager] Skipping validation for recently restored space ${existingSpace.id} - using restoration gate`);
         }
 
         // Update existing space with current window state
@@ -510,6 +559,13 @@ export class StateManager implements IStateManager {
           name: existingSpace.name,
           named: existingSpace.named // Preserve named status
         };
+
+        // GATE CLEARING: If this was a recently restored space and tabs have loaded,
+        // clear the restoration gate - the space is now stable
+        if (isRestored && urls.length > 0) {
+          console.log(`[StateManager] Tabs loaded for restored space ${existingSpace.id} (${urls.length} tabs), clearing restoration gate`);
+          this.clearRestorationGate(existingSpace.id);
+        }
       } else {
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
@@ -988,6 +1044,10 @@ export class StateManager implements IStateManager {
       // Update in-memory state
       this.spaces = updatedSpaces;
       this.closedSpaces = updatedClosedSpaces;
+
+      // CRITICAL: Mark space as recently restored to protect from premature validation
+      // This gate prevents synchronization from destroying the restored space before tabs load
+      this.markSpaceAsRestored(newSpaceId, newWindowId, space.name);
 
       // Invalidate caches
       this.invalidateCache(`space:${oldSpaceId}`);

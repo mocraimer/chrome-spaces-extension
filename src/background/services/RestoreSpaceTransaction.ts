@@ -143,10 +143,14 @@ export class RestoreSpaceTransaction {
           after: restoredSpace.name
         });
       }
+
+      // NOTE: Cleanup of restoringWindowIds is now handled by StateManager's restoration gate
+      // The gate is cleared when synchronization detects tabs have loaded successfully
+      console.log(`[RestoreSpaceTransaction] Restoration complete for window ${window.id}. Gate will be cleared by StateManager after validation.`);
     } finally {
-      // Always clean up the restoration marker, even if there's an error
-      console.log(`[RestoreSpaceTransaction] Unmarking window ${window.id} as restoring`);
-      this.restoringWindowIds.delete(window.id);
+      // Keep window in restoringWindowIds - StateManager will clean it up via clearRestorationGate
+      // This prevents premature cleanup before tabs have fully loaded
+      console.log(`[RestoreSpaceTransaction] Restoration transaction complete for window ${window.id}`);
     }
   }
 
