@@ -46,7 +46,8 @@ class BackgroundService {
       this.tabManager,
       this.storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      this.restoringWindowIds
     );
 
     this.restoreTransaction = new RestoreSpaceTransaction(

@@ -42,7 +42,8 @@ export class StateManager implements IStateManager {
     private tabManager: TabManager,
     private storageManager: IStorageManager,
     private updateQueue: StateUpdateQueue,
-    private broadcastService: StateBroadcastService
+    private broadcastService: StateBroadcastService,
+    private restoringWindowIds?: Set<number>
   ) {}
 
   /**
@@ -456,6 +457,20 @@ export class StateManager implements IStateManager {
     // Reconcile currently open windows with stored spaces
     for (const window of windows) {
       if (!window.id) continue;
+
+      // Skip windows that are currently being restored
+      // RestoreSpaceTransaction will handle the space creation and re-keying
+      if (this.restoringWindowIds?.has(window.id)) {
+        console.log(`[StateManager] Skipping window ${window.id} during sync - restoration in progress`);
+        // Still add to openWindowIds to prevent the space from being moved to closed
+        openWindowIds.add(window.id.toString());
+        // Preserve the existing space if it exists (it's being restored)
+        const existingSpace = this.spaces[window.id.toString()];
+        if (existingSpace) {
+          updatedSpaces[window.id.toString()] = existingSpace;
+        }
+        continue;
+      }
 
       const spaceId = window.id.toString();
       openWindowIds.add(spaceId);
