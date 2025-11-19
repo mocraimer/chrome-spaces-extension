@@ -105,14 +105,17 @@ export class ExtensionManager {
       }
     }
 
-    // Method 2: From service workers
-    const serviceWorkers = context.serviceWorkers();
-    if (serviceWorkers.length > 0) {
-      const match = serviceWorkers[0].url().match(/chrome-extension:\/\/([a-z]+)/);
-      if (match) {
-        this.extensionId = match[1];
-        return this.extensionId;
+    // Method 2: From service workers (with retry)
+    for (let i = 0; i < 5; i++) {
+      const serviceWorkers = context.serviceWorkers();
+      if (serviceWorkers.length > 0) {
+        const match = serviceWorkers[0].url().match(/chrome-extension:\/\/([a-z]+)/);
+        if (match) {
+          this.extensionId = match[1];
+          return this.extensionId;
+        }
       }
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     // Method 3: Wait for service worker (MV3 support)
@@ -131,9 +134,10 @@ export class ExtensionManager {
     }
 
     // Method 4: Wait for extension page to appear (Fallback)
+    // Increased timeout to 20s for slower CI environments
     const newPage = await context.waitForEvent('page', {
       predicate: page => page.url().includes('chrome-extension://'),
-      timeout: 10000
+      timeout: 20000
     });
 
     const match = newPage.url().match(/chrome-extension:\/\/([a-z]+)/);

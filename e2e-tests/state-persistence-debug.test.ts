@@ -409,7 +409,7 @@ test.describe('State Persistence Diagnostic Suite', () => {
     await context.close();
   });
 
-  test.skip('DIAGNOSTIC: Service worker suspension behavior', async () => {
+  test('DIAGNOSTIC: Service worker suspension behavior', async () => {
     let context: BrowserContext;
     let extensionId: string;
 

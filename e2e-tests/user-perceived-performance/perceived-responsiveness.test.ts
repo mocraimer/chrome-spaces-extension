@@ -98,7 +98,7 @@ test.describe('Perceived Responsiveness - User-Perceived Performance', () => {
     const startTime = Date.now();
 
     // Try to type in search (should not block)
-    await searchInput.type('responsive', { delay: 0 });
+    await searchInput.type('responsive', { delay: 10 });
 
     const responseTime = Date.now() - startTime;
 
