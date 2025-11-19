@@ -9,6 +9,7 @@ import { DEFAULT_SPACE_NAME } from '@/shared/constants';
 import { PerformanceTrackingService, MetricCategories } from './performance/PerformanceTrackingService';
 import { generateUUID } from '@/shared/utils/uuid';
 import { preserveSpaceIdentity } from '@/shared/utils/spaceHelpers';
+import { RestoreRegistry, RestoreSnapshot } from './types/RestoreRegistry';
 
 export interface StateCache {
   timestamp: number;
@@ -47,7 +48,7 @@ export class StateManager implements IStateManager {
     private storageManager: IStorageManager,
     private updateQueue: StateUpdateQueue,
     private broadcastService: StateBroadcastService,
-    private restoringWindowIds?: Set<number>
+    private restoreRegistry: RestoreRegistry
   ) {}
 
   /**
@@ -158,6 +159,60 @@ export class StateManager implements IStateManager {
     }
   }
 
+  registerRestoreIntent(spaceId: string, expectedType: string = 'normal'): RestoreSnapshot {
+    const space =
+      this.closedSpaces[spaceId] ??
+      this.spaces[spaceId];
+
+    if (!space) {
+      throw new Error(`Cannot register restore intent. Space not found: ${spaceId}`);
+    }
+
+    const snapshot = this.restoreRegistry.registerPending(space, spaceId, expectedType);
+    console.log('[StateManager] Registered restore intent', {
+      spaceId,
+      permanentId: snapshot.permanentId,
+      named: snapshot.named,
+      urlCount: snapshot.urls.length,
+      expectedType
+    });
+    return snapshot;
+  }
+
+  attachWindowToRestore(spaceId: string, windowId: number): RestoreSnapshot | null {
+    const snapshot = this.restoreRegistry.attachWindow(spaceId, windowId);
+    if (snapshot) {
+      console.log('[StateManager] Attached window to restore snapshot', {
+        windowId,
+        spaceId,
+        named: snapshot.named
+      });
+    }
+    return snapshot;
+  }
+
+  cancelRestoreIntent(spaceId: string, reason?: string): void {
+    this.restoreRegistry.fail(spaceId, reason);
+  }
+
+  async handleWindowCreated(window: chrome.windows.Window): Promise<boolean> {
+    if (!window.id) return false;
+
+    const snapshot = this.restoreRegistry.claimPendingWindow(window);
+    if (!snapshot) {
+      return false;
+    }
+
+    console.log('[StateManager] Handling restoration for newly created window', {
+      windowId: window.id,
+      closedSpaceId: snapshot.closedSpaceId,
+      originalName: snapshot.originalName,
+      urlCount: snapshot.urls.length
+    });
+
+    return true;
+  }
+
   /**
    * Mark a space as recently restored to protect it from premature validation.
    * This gate prevents synchronization from interfering before tabs fully load.
@@ -180,11 +235,7 @@ export class StateManager implements IStateManager {
     if (restorationInfo) {
       console.log(`[StateManager] ✅ Clearing restoration gate for space ${spaceId} - validation successful`);
       this.recentlyRestoredSpaces.delete(spaceId);
-      // Also remove from restoringWindowIds if present
-      if (this.restoringWindowIds?.has(restorationInfo.windowId)) {
-        console.log(`[StateManager] Removing window ${restorationInfo.windowId} from restoringWindowIds`);
-        this.restoringWindowIds.delete(restorationInfo.windowId);
-      }
+      this.restoreRegistry.finalize(restorationInfo.windowId);
     }
   }
 
@@ -492,6 +543,12 @@ export class StateManager implements IStateManager {
     const now = Date.now();
     const openWindowIds = new Set<string>();
 
+    console.log('[StateManager] 🔄 synchronizeWindowsAndSpaces start', {
+      windowCount: windows.length,
+      activeSpaceIds: Object.keys(this.spaces),
+      closedSpaceIds: Object.keys(this.closedSpaces)
+    });
+
     const updatedSpaces: Record<string, Space> = {};
     const updatedClosedSpaces: Record<string, Space> = { ...this.closedSpaces };
 
@@ -499,9 +556,28 @@ export class StateManager implements IStateManager {
     for (const window of windows) {
       if (!window.id) continue;
 
+      console.log('[StateManager] 🔍 Inspecting window during sync', {
+        windowId: window.id,
+        isMarkedRestoring: this.restoreRegistry.isWindowRestoring(window.id),
+        existingActiveSpace: this.spaces[window.id.toString()]
+          ? {
+              id: window.id.toString(),
+              name: this.spaces[window.id.toString()].name,
+              named: this.spaces[window.id.toString()].named
+            }
+          : null,
+        existingClosedSpace: this.closedSpaces[window.id.toString()]
+          ? {
+              id: window.id.toString(),
+              name: this.closedSpaces[window.id.toString()].name,
+              named: this.closedSpaces[window.id.toString()].named
+            }
+          : null
+      });
+
       // Skip windows that are currently being restored
       // RestoreSpaceTransaction will handle the space creation and re-keying
-      if (this.restoringWindowIds?.has(window.id)) {
+      if (this.restoreRegistry.isWindowRestoring(window.id)) {
         console.log(`[StateManager] Skipping window ${window.id} during sync - restoration in progress`);
         // Still add to openWindowIds to prevent the space from being moved to closed
         openWindowIds.add(window.id.toString());
@@ -531,7 +607,12 @@ export class StateManager implements IStateManager {
         // Tabs may not be fully loaded yet, validation would fail and destroy the restored space
         const isRestored = this.isRecentlyRestored(existingSpace.id);
 
-        if (!isRestored) {
+        // CRITICAL FIX: Also skip validation for named spaces that were recently modified
+        // This prevents name reversion when a named space is restored but tabs haven't loaded yet
+        const isRecentlyModified = existingSpace.lastModified && (now - existingSpace.lastModified) < 30000; // 30 seconds
+        const shouldSkipValidation = isRestored || (existingSpace.named && isRecentlyModified);
+
+        if (!shouldSkipValidation) {
           // Validate that this window actually belongs to the space
           const isValidWindow = await this.validateWindowOwnership(existingSpace, window);
           if (!isValidWindow) {
@@ -539,12 +620,23 @@ export class StateManager implements IStateManager {
             continue;
           }
         } else {
-          console.log(`[StateManager] Skipping validation for recently restored space ${existingSpace.id} - using restoration gate`);
+          if (isRestored) {
+            console.log(`[StateManager] Skipping validation for recently restored space ${existingSpace.id} - using restoration gate`);
+          } else {
+            console.log(`[StateManager] Skipping validation for recently modified named space ${existingSpace.id} (${existingSpace.name})`);
+          }
         }
 
         // Update existing space with current window state
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
+
+        console.log('[StateManager] ✅ Sync updating existing space', {
+          spaceId: existingSpace.id,
+          previousName: existingSpace.name,
+          named: existingSpace.named,
+          tabCount: urls.length
+        });
 
         updatedSpaces[existingSpace.id] = {
           ...existingSpace,
@@ -570,6 +662,19 @@ export class StateManager implements IStateManager {
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
         const name = `${DEFAULT_SPACE_NAME} ${spaceId}`;
+
+        console.warn('[StateManager] ⚠️ Creating new space during sync', {
+          windowId: window.id,
+          derivedSpaceId: spaceId,
+          assignedName: name,
+          tabCount: urls.length,
+          activeRestores: this.restoreRegistry.listActive().map(snapshot => ({
+            closedSpaceId: snapshot.closedSpaceId,
+            windowId: snapshot.windowId,
+            status: snapshot.status
+          }))
+        });
+
         const space = await (this.storageManager as any).createSpace(window.id, name, urls);
 
         updatedSpaces[spaceId] = {
@@ -622,6 +727,11 @@ export class StateManager implements IStateManager {
     await this.storageManager.saveSpaces(this.spaces);
 
     this.broadcastStateUpdate();
+
+    console.log('[StateManager] ✅ synchronizeWindowsAndSpaces complete', {
+      activeSpaceCount: Object.keys(this.spaces).length,
+      closedSpaceCount: Object.keys(this.closedSpaces).length
+    });
   }
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 300)
@@ -725,6 +835,28 @@ export class StateManager implements IStateManager {
     await this.acquireLock(spaceId);
     
     try {
+      if (this.restoreRegistry.isWindowRestoring(windowId)) {
+        console.log('[StateManager] createSpace skipped - window is under restoration', {
+          windowId,
+          spaceId
+        });
+        return;
+      }
+
+      console.log('[StateManager] 🆕 createSpace invoked', {
+        windowId,
+        spaceId,
+        providedName: spaceName,
+        options,
+        activeRestores: this.restoreRegistry.listActive().map(snapshot => ({
+          closedSpaceId: snapshot.closedSpaceId,
+          windowId: snapshot.windowId,
+          status: snapshot.status
+        })),
+        hasActiveSpace: !!this.spaces[spaceId],
+        hasClosedSpace: !!this.closedSpaces[spaceId]
+      });
+
       // Verify space doesn't already exist
       if (await this.getSpaceById(spaceId)) {
         throw new Error(`Space already exists with ID: ${spaceId}`);
@@ -737,6 +869,14 @@ export class StateManager implements IStateManager {
       // Create new space using StorageManager
       const name = options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${spaceId}`;
       const named = options?.named || false;
+
+      console.log('[StateManager] 🏷️ Creating space with name assignment', {
+        spaceId,
+        name,
+        named,
+        urlCount: urls.length
+      });
+
       const space = await (this.storageManager as any).createSpace(windowId, name, urls, named);
 
       // Atomic update
@@ -794,12 +934,11 @@ export class StateManager implements IStateManager {
     });
     this.closedSpaces[closedSpaceId] = closedSpace;
 
-    console.log(`[StateManager] Closed space data:`, {
-      id: closedSpaceId,
-      name: closedSpace.name,
-      urlsCount: closedSpace.urls.length,
-      named: closedSpace.named
-    });
+    console.log(`[StateManager] Closed space data:`);
+    console.log(`  - ID: ${closedSpaceId}`);
+    console.log(`  - Name: "${closedSpace.name}"`);
+    console.log(`  - Named: ${closedSpace.named}`);
+    console.log(`  - URLs: ${closedSpace.urls.length} tabs`);
 
     // Persist tabs for the closed space and update stores atomically-ish
     await Promise.all([
@@ -862,6 +1001,10 @@ export class StateManager implements IStateManager {
 
       // If restoring from closed store and we have a new windowId, re-key to that id
       let targetActiveId = space.id;
+      if (windowId) {
+        this.attachWindowToRestore(spaceId, windowId);
+      }
+
       if (fromClosedSpaces && windowId) {
         targetActiveId = windowId.toString();
       }
@@ -885,12 +1028,11 @@ export class StateManager implements IStateManager {
         sourceWindowId: windowId?.toString() || space.sourceWindowId
       });
 
-      console.log(`[StateManager] Restored space data:`, {
-        id: targetActiveId,
-        name: updatedSpace.name,
-        urlsCount: updatedSpace.urls.length,
-        named: updatedSpace.named
-      });
+      console.log(`[StateManager] Restored space data:`);
+      console.log(`  - ID: ${targetActiveId}`);
+      console.log(`  - Name: "${updatedSpace.name}"`);
+      console.log(`  - Named: ${updatedSpace.named}`);
+      console.log(`  - URLs: ${updatedSpace.urls.length} tabs`);
 
       // Validate state transition when not changing id; skip when re-keying
       if (!fromClosedSpaces || targetActiveId === space.id) {
@@ -939,6 +1081,12 @@ export class StateManager implements IStateManager {
       // Update memory state
       this.spaces = updatedSpaces;
       this.closedSpaces = updatedClosedSpaces;
+
+      // CRITICAL: Mark space as recently restored to protect from premature validation
+      // This gate prevents synchronization from destroying the restored space before tabs load
+      if (windowId) {
+        this.markSpaceAsRestored(targetActiveId, windowId, updatedSpace.name);
+      }
 
       // Queue the state update for broadcasting
       await this.updateQueue.enqueue({
@@ -993,6 +1141,7 @@ export class StateManager implements IStateManager {
       }
 
       console.log(`[StateManager] Re-keying space from ${oldSpaceId} to ${newSpaceId}`);
+      console.log(`[StateManager] Space being re-keyed: name="${space.name}", named=${space.named}`);
 
       // Create updated space with new IDs
       const updatedSpace = preserveSpaceIdentity(space, {
@@ -1001,6 +1150,8 @@ export class StateManager implements IStateManager {
         windowId: newWindowId,
         isActive: true
       });
+
+      console.log(`[StateManager] After preserveSpaceIdentity: name="${updatedSpace.name}", named=${updatedSpace.named}`);
 
       // Remove from old location
       const updatedSpaces = { ...this.spaces };

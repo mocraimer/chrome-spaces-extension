@@ -1,12 +1,11 @@
 import { WindowManager } from './WindowManager';
 import { StateManager } from './StateManager';
-import { TabManager } from './TabManager';
 import { Space } from '@/shared/types/Space';
 
-export type RestoreState = 
+export type RestoreState =
   | 'INITIALIZING'
   | 'CREATING_WINDOW'
-  | 'RESTORING_TABS' 
+  | 'RESTORING_TABS'
   | 'COMPLETED'
   | 'FAILED';
 
@@ -23,9 +22,7 @@ export class RestoreSpaceTransaction {
 
   constructor(
     private windowManager: WindowManager,
-    private stateManager: StateManager,
-    private tabManager: TabManager,
-    private restoringWindowIds: Set<number>
+    private stateManager: StateManager
   ) {}
 
   onStateChange(handler: StateChangeHandler): void {
@@ -63,7 +60,6 @@ export class RestoreSpaceTransaction {
 
     while (this.restorationQueue.length > 0) {
       const { spaceId, resolve, reject } = this.restorationQueue[0];
-      let createdWindowId: number | undefined;
 
       try {
         this.setState('INITIALIZING');
@@ -72,9 +68,6 @@ export class RestoreSpaceTransaction {
         this.setState('COMPLETED');
         resolve();
       } catch (error) {
-        if (createdWindowId) {
-          await this.cleanupFailedRestoration(createdWindowId);
-        }
         reject(error as Error);
         this.handleError(error as Error);
       } finally {
@@ -86,77 +79,57 @@ export class RestoreSpaceTransaction {
     this.isProcessingQueue = false;
   }
 
-  private async cleanupFailedRestoration(windowId: number): Promise<void> {
-    try {
-      await this.windowManager.closeWindow(windowId);
-    } catch (cleanupError) {
-      console.error('Failed to cleanup window after restore failure:', cleanupError);
-      // Log additional error details for debugging
-      console.error('Cleanup error details:', {
-        windowId,
-        error: cleanupError,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }
-
   private async executeRestore(spaceId: string): Promise<void> {
     const space = await this.getSpaceWithRetry(spaceId);
 
-    console.log(`[RestoreSpaceTransaction] Restoring space:`, {
+    console.log('[RestoreSpaceTransaction] Restoring space snapshot', {
       id: spaceId,
       name: space.name,
       named: space.named,
       urls: space.urls.length
     });
 
-    // Create window with retry mechanism
+    this.stateManager.registerRestoreIntent(spaceId);
+
     this.setState('CREATING_WINDOW');
     const window = await this.createWindowWithRetry(space.urls);
 
     if (!window?.id) {
+      this.stateManager.cancelRestoreIntent(spaceId, 'Failed to create window with valid ID');
       throw new Error('Failed to create window with valid ID');
     }
 
-    // Mark this window as being restored to prevent event handlers from creating a default space
-    console.log(`[RestoreSpaceTransaction] Marking window ${window.id} as restoring`);
-    this.restoringWindowIds.add(window.id);
+    const windowId = window.id;
+    this.stateManager.attachWindowToRestore(spaceId, windowId);
 
     try {
-      // Re-key the space from old ID to new window ID
-      // This is crucial because window IDs change after browser restart
-      console.log(`[RestoreSpaceTransaction] Re-keying space ${spaceId} to new window ID ${window.id}`);
-      await this.stateManager.rekeySpace(spaceId, window.id);
-      // Tabs were created by createWindow; rekeySpace persisted active tab rows.
+      console.log(`[RestoreSpaceTransaction] Re-keying space ${spaceId} to window ${windowId}`);
+      await this.stateManager.rekeySpace(spaceId, windowId);
 
-      // Verify the name was preserved
-      const restoredSpace = this.stateManager.getAllSpaces()[window.id.toString()];
-      console.log(`[RestoreSpaceTransaction] Rekey result:`, {
+      const restoredSpace = this.stateManager.getAllSpaces()[windowId.toString()];
+      console.log('[RestoreSpaceTransaction] Rekey result', {
         id: restoredSpace?.id,
         name: restoredSpace?.name,
         named: restoredSpace?.named
       });
+    } catch (error) {
+      this.stateManager.cancelRestoreIntent(spaceId, error instanceof Error ? error.message : 'Restore failed');
+      await this.cleanupFailedRestoration(windowId);
+      throw error;
+    }
+  }
 
-      if (restoredSpace && restoredSpace.name !== space.name) {
-        console.error(`[RestoreSpaceTransaction] ⚠️ Name mismatch after rekey!`, {
-          before: space.name,
-          after: restoredSpace.name
-        });
-      }
-
-      // NOTE: Cleanup of restoringWindowIds is now handled by StateManager's restoration gate
-      // The gate is cleared when synchronization detects tabs have loaded successfully
-      console.log(`[RestoreSpaceTransaction] Restoration complete for window ${window.id}. Gate will be cleared by StateManager after validation.`);
-    } finally {
-      // Keep window in restoringWindowIds - StateManager will clean it up via clearRestorationGate
-      // This prevents premature cleanup before tabs have fully loaded
-      console.log(`[RestoreSpaceTransaction] Restoration transaction complete for window ${window.id}`);
+  private async cleanupFailedRestoration(windowId: number): Promise<void> {
+    try {
+      await this.windowManager.closeWindow(windowId);
+    } catch (cleanupError) {
+      console.error('Failed to cleanup window after restore failure:', cleanupError);
     }
   }
 
   private async getSpaceWithRetry(spaceId: string, maxRetries = 3): Promise<Space> {
     let lastError: Error | null = null;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const space = await this.stateManager.getSpaceById(spaceId);
@@ -171,7 +144,7 @@ export class RestoreSpaceTransaction {
         }
       }
     }
-    
+
     throw lastError || new Error(`Failed to retrieve space after ${maxRetries} attempts`);
   }
 
@@ -183,31 +156,10 @@ export class RestoreSpaceTransaction {
       });
     } catch (error) {
       console.error('Window creation failed, retrying with single tab:', error);
-      // Fallback: Try creating with just the first URL
       return await this.windowManager.createWindow([urls[0]], {
         focused: true,
         state: 'normal'
       });
-    }
-  }
-
-  private async atomicSpaceUpdate(spaceId: string, window: chrome.windows.Window): Promise<void> {
-    try {
-      await this.stateManager.updateSpaceWindow(spaceId, window);
-    } catch (error) {
-      throw new Error(`Failed to update space window association: ${(error as Error).message}`);
-    }
-  }
-
-  private async restoreTabsWithValidation(windowId: number, urls: string[]): Promise<void> {
-    if (!urls.length) {
-      throw new Error('No URLs provided for tab restoration');
-    }
-
-    try {
-      await this.tabManager.createTabs(windowId, urls);
-    } catch (error) {
-      throw new Error(`Failed to restore tabs: ${(error as Error).message}`);
     }
   }
 }

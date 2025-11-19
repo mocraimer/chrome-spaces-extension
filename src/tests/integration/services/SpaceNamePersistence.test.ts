@@ -6,6 +6,7 @@ import { StateUpdateQueue } from '@/background/services/StateUpdateQueue';
 import { StateBroadcastService } from '@/background/services/StateBroadcastService';
 import { STORAGE_KEY } from '@/shared/constants';
 import { createMockSpace } from '@/tests/mocks/mockTypes';
+import { RestoreRegistry } from '@/background/services/types/RestoreRegistry';
 
 // Mock chrome APIs
 const mockChrome = {
@@ -72,13 +73,15 @@ describe.skip('Space Name Persistence Integration Tests', () => {
     tabManager = new TabManager();
     updateQueue = new StateUpdateQueue();
     broadcastService = new StateBroadcastService();
-    
+    const restoreRegistry = new RestoreRegistry();
+
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
   });
 
@@ -139,12 +142,14 @@ describe.skip('Space Name Persistence Integration Tests', () => {
       const newTabManager = new TabManager();
       const newUpdateQueue = new StateUpdateQueue();
       const newBroadcastService = new StateBroadcastService();
+      const newRestoreRegistry = new RestoreRegistry();
       const newStateManager = new StateManager(
         newWindowManager,
         newTabManager,
         newStorageManager,
         newUpdateQueue,
-        newBroadcastService
+        newBroadcastService,
+        newRestoreRegistry
       );
 
       // Mock storage returning the saved data
@@ -285,7 +290,8 @@ describe.skip('Space Name Persistence Integration Tests', () => {
         new TabManager(),
         new StorageManager(),
         new StateUpdateQueue(),
-        new StateBroadcastService()
+        new StateBroadcastService(),
+        new RestoreRegistry()
       );
 
       mockChrome.storage.local.get

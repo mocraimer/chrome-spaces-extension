@@ -6,6 +6,7 @@ import { StateUpdateQueue } from '@/background/services/StateUpdateQueue';
 import { StateBroadcastService } from '@/background/services/StateBroadcastService';
 import { STORAGE_KEY } from '@/shared/constants';
 import { createMockSpace } from '@/tests/mocks/mockTypes';
+import { RestoreRegistry } from '@/background/services/types/RestoreRegistry';
 
 // Mock chrome APIs
 const mockChrome = {
@@ -48,13 +49,15 @@ describe.skip('Space Name Validation Tests', () => {
     const tabManager = new TabManager();
     const updateQueue = new StateUpdateQueue();
     const broadcastService = new StateBroadcastService();
+    const restoreRegistry = new RestoreRegistry();
     
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
   });
 

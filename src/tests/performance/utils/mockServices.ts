@@ -4,6 +4,7 @@ import { TabManager } from '../../../background/services/TabManager';
 import { StorageManager } from '../../../background/services/StorageManager';
 import { StateUpdateQueue } from '../../../background/services/StateUpdateQueue';
 import { StateBroadcastService } from '../../../background/services/StateBroadcastService';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 import { Space } from '@/shared/types/Space';
 
 export class MockTabManager extends TabManager {
@@ -89,12 +90,14 @@ export function createMockServices() {
   const storageManager = new MockStorageManager();
   const updateQueue = new MockStateUpdateQueue();
   const broadcastService = new MockStateBroadcastService();
+  const restoreRegistry = new RestoreRegistry();
   const stateManager = new StateManager(
     windowManager,
     tabManager,
     storageManager,
     updateQueue,
-    broadcastService
+    broadcastService,
+    restoreRegistry
   );
 
   return {
@@ -103,6 +106,7 @@ export function createMockServices() {
     storageManager,
     updateQueue,
     broadcastService,
+    restoreRegistry,
     stateManager
   };
 }

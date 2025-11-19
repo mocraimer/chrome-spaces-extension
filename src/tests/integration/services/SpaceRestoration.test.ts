@@ -6,6 +6,7 @@ import { StorageManager } from '../../../background/services/StorageManager';
 import { StateUpdateQueue } from '../../../background/services/StateUpdateQueue';
 import { StateBroadcastService } from '../../../background/services/StateBroadcastService';
 import type { Space } from '../../../shared/types/Space';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 
 // SKIPPED: Runtime failures - needs investigation
 describe.skip('Space Restoration Integration Tests', () => {
@@ -17,6 +18,7 @@ describe.skip('Space Restoration Integration Tests', () => {
   let updateQueue: StateUpdateQueue;
   let broadcastService: StateBroadcastService;
   let mockWindowId: number;
+  let restoreRegistry: RestoreRegistry;
 
   beforeEach(() => {
     // Initialize services
@@ -26,19 +28,19 @@ describe.skip('Space Restoration Integration Tests', () => {
     updateQueue = new StateUpdateQueue();
     broadcastService = new StateBroadcastService();
 
+    restoreRegistry = new RestoreRegistry();
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
 
     restoreSpaceTransaction = new RestoreSpaceTransaction(
       windowManager,
-      stateManager,
-      tabManager,
-      new Set<number>()
+      stateManager
     );
 
     // Mock window creation

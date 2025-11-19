@@ -11,30 +11,27 @@ export class MessageHandler implements IMessageHandler {
     private tabManager: TabManager,
     private stateManager: StateManager
   ) {
-    // Listen for keyboard commands
     chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
   }
 
-  /**
-   * Handle incoming messages from the extension UI
-   */
   async handleMessage(
     request: any,
     sender: chrome.runtime.MessageSender,
     sendResponse: (response?: any) => void
   ): Promise<void> {
-    // Handle special test messages that don't follow the action pattern
     if (request.type === 'FORCE_SAVE_STATE') {
       try {
         console.log('[MessageHandler] Force save state requested');
         await this.stateManager.handleShutdown();
         sendResponse({ success: true });
-        return;
       } catch (error) {
         console.error('[MessageHandler] Force save failed:', error);
-        sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
-        return;
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
       }
+      return;
     }
 
     if (!typeGuards.action(request.action)) {
@@ -50,7 +47,6 @@ export class MessageHandler implements IMessageHandler {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
 
-      // Notify UI of error
       this.broadcastMessage({
         type: MessageTypes.ERROR_OCCURRED,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -58,58 +54,25 @@ export class MessageHandler implements IMessageHandler {
     }
   }
 
-  /**
-   * Process different action types
-   */
   private async processAction(request: any): Promise<any> {
     switch (request.action) {
       case ActionTypes.GET_ALL_SPACES:
-        // Ensure state manager is initialized
-        await this.stateManager.ensureInitialized();
-        
-        // Check if current window has a space, or if no spaces exist at all
-        // This fixes the issue where popup opens before synchronization happens
-        const currentWindow = await this.windowManager.getCurrentWindow();
-        const currentWindowId = currentWindow?.id;
-        const spaces = this.stateManager.getAllSpaces();
-        const needsSync = !currentWindowId || 
-                         !spaces[currentWindowId.toString()] || 
-                         Object.keys(spaces).length === 0;
-        
-        if (needsSync) {
-          try {
-            // Trigger synchronization to ensure current window has a space
-            await this.stateManager.synchronizeWindowsAndSpaces();
-          } catch (error) {
-            // Log but don't fail - return whatever spaces we have
-            console.warn('[MessageHandler] Synchronization failed during GET_ALL_SPACES:', error);
-          }
-        }
-        
-        return {
-          spaces: this.stateManager.getAllSpaces(),
-          closedSpaces: this.stateManager.getClosedSpaces()
-        };
-
+        return this.handleGetAllSpaces();
       case ActionTypes.RENAME_SPACE:
         await this.stateManager.renameSpace(request.windowId, request.name);
         return true;
-
       case ActionTypes.CLOSE_SPACE:
         await this.stateManager.closeSpace(request.windowId);
         await this.windowManager.closeWindow(request.windowId);
         return true;
-
       case ActionTypes.SWITCH_TO_SPACE:
         await this.windowManager.switchToWindow(request.windowId);
         return {
           success: true,
           spaces: this.stateManager.getAllSpaces()
         };
-
       case ActionTypes.RESTORE_SPACE:
         return this.handleRestoreSpace(request.spaceId);
-
       case ActionTypes.REMOVE_CLOSED_SPACE:
         await this.stateManager.deleteClosedSpace(request.spaceId);
         return {
@@ -117,44 +80,76 @@ export class MessageHandler implements IMessageHandler {
           spaces: this.stateManager.getAllSpaces(),
           closedSpaces: this.stateManager.getClosedSpaces()
         };
-
       case ActionTypes.MOVE_TAB:
         return this.handleMoveTab(request.tabId, request.targetSpaceId);
-
       default:
         throw createError(`Unknown action: ${request.action}`, 'INVALID_STATE');
     }
   }
 
-  /**
-   * Handle restoring a closed space
-   */
+  private async handleGetAllSpaces() {
+    await this.stateManager.ensureInitialized();
+
+    const currentWindow = await this.windowManager.getCurrentWindow();
+    const currentWindowId = currentWindow?.id;
+    const spaces = this.stateManager.getAllSpaces();
+    const needsSync =
+      !currentWindowId ||
+      !spaces[currentWindowId.toString()] ||
+      Object.keys(spaces).length === 0;
+
+    if (needsSync) {
+      try {
+        await this.stateManager.synchronizeWindowsAndSpaces();
+      } catch (error) {
+        console.warn('[MessageHandler] Synchronization failed during GET_ALL_SPACES:', error);
+      }
+    }
+
+    return {
+      spaces: this.stateManager.getAllSpaces(),
+      closedSpaces: this.stateManager.getClosedSpaces()
+    };
+  }
+
   private async handleRestoreSpace(spaceId: string): Promise<{
     success: boolean;
     windowId?: number;
     error?: string;
   }> {
     try {
-      // Get space info before restoration
+      await this.stateManager.ensureInitialized();
+
       const space = await this.stateManager.getSpaceById(spaceId);
       if (!space) {
         return { success: false, error: 'Invalid space' };
       }
 
-      // Create new window with ALL URLs at once - WindowManager handles multiple tabs efficiently
-      // If urls is empty, restoreSpace() will load tabs from storage as fallback
-      const window = await this.windowManager.createWindow(space.urls || []);
+      console.log(`[MessageHandler] Restoring space: ${space.name} (ID: ${spaceId})`);
 
+      this.stateManager.registerRestoreIntent(spaceId);
+
+      const window = await this.windowManager.createWindow(space.urls || []);
       if (!window.id) {
+        this.stateManager.cancelRestoreIntent(spaceId, 'Window creation returned without id');
         return { success: false, error: 'Failed to create window' };
       }
 
-      // Restore the space and associate it with the new window
-      // This preserves customName and avoids creating duplicates
-      await this.stateManager.restoreSpace(spaceId, window.id);
+      const windowId = window.id;
+      this.stateManager.attachWindowToRestore(spaceId, windowId);
 
-      return { success: true, windowId: window.id };
+      try {
+        await this.stateManager.restoreSpace(spaceId, windowId);
+        console.log(`[MessageHandler] ✅ Successfully restored space: ${space.name} (window ID: ${windowId})`);
+        return { success: true, windowId };
+      } catch (error) {
+        console.error(`[MessageHandler] Failed to restore space: ${error}`);
+        await this.windowManager.closeWindow(windowId);
+        this.stateManager.cancelRestoreIntent(spaceId, error instanceof Error ? error.message : 'restore failed');
+        throw error;
+      }
     } catch (error) {
+      this.stateManager.cancelRestoreIntent(spaceId, error instanceof Error ? error.message : 'restore failed');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to restore space'
@@ -162,9 +157,6 @@ export class MessageHandler implements IMessageHandler {
     }
   }
 
-  /**
-   * Handle moving a tab to another space
-   */
   private async handleMoveTab(
     tabId: number,
     targetSpaceId: number
@@ -178,21 +170,15 @@ export class MessageHandler implements IMessageHandler {
     }
   }
 
-  /**
-   * Broadcast a message to all extension pages
-   */
   private broadcastMessage(message: {
     type: string;
     [key: string]: any;
   }): void {
     chrome.runtime.sendMessage(message).catch(() => {
-      // Ignore errors if no listeners
+      // No-op when no listeners are connected
     });
   }
 
-  /**
-   * Handle keyboard command events
-   */
   private async handleCommand(command: string): Promise<void> {
     switch (command) {
       case CommandTypes.NEXT_SPACE:
@@ -201,53 +187,44 @@ export class MessageHandler implements IMessageHandler {
       case CommandTypes.PREVIOUS_SPACE:
         await this.navigateSpaces('previous');
         break;
-      case "_execute_action":
+      case CommandTypes.TOGGLE_POPUP:
+      case '_execute_action':
         await this.handleTogglePopup();
         break;
     }
+
     this.broadcastMessage({
       type: MessageTypes.COMMAND_EXECUTED,
       command
     });
   }
 
-  /**
-   * Toggle popup display
-   */
   private async handleTogglePopup(): Promise<void> {
-    // Trigger popup toggle by broadcasting a toggle message to extension pages
     this.broadcastMessage({
-      type: "POPUP_TOGGLE"
+      type: 'POPUP_TOGGLE'
     });
   }
 
-  /**
-   * Navigate between spaces
-   */
   private async navigateSpaces(direction: 'next' | 'previous'): Promise<void> {
     const spaces = Object.values(this.stateManager.getAllSpaces());
     if (spaces.length <= 1) return;
 
-    // Get current window ID
     const currentWindow = await this.windowManager.getCurrentWindow();
     const windowId = currentWindow?.id;
     if (windowId === undefined) return;
 
-    // Find current space index
     const currentSpaceId = windowId.toString();
     const currentIndex = spaces.findIndex(space => space.id === currentSpaceId);
     if (currentIndex === -1) return;
 
-    // Calculate next space index
-    const nextIndex = direction === 'next'
-      ? (currentIndex + 1) % spaces.length
-      : (currentIndex - 1 + spaces.length) % spaces.length;
+    const nextIndex =
+      direction === 'next'
+        ? (currentIndex + 1) % spaces.length
+        : (currentIndex - 1 + spaces.length) % spaces.length;
 
-    // Switch to the target space
     const targetSpace = spaces[nextIndex];
-    await this.windowManager.switchToWindow(parseInt(targetSpace.id));
-    
-    // Update UI state
+    await this.windowManager.switchToWindow(parseInt(targetSpace.id, 10));
+
     this.broadcastMessage({
       type: MessageTypes.SPACES_UPDATED,
       spaces: this.stateManager.getAllSpaces()

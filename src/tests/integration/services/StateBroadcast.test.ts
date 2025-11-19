@@ -2,6 +2,7 @@ import { StateManager } from '../../../background/services/StateManager';
 import { WindowManager } from '../../../background/services/WindowManager';
 import { StorageManager } from '../../../background/services/StorageManager';
 import { TabManager } from '../../../background/services/TabManager';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 import { mockChrome } from '../../utils/testUtils';
 
 jest.mock('../../../background/services/WindowManager');
@@ -47,13 +48,15 @@ describe.skip('State Broadcast Integration', () => {
     const broadcastService = {
       broadcast: jest.fn()
     } as any;
+    const restoreRegistry = new RestoreRegistry();
 
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
 
     // Setup default mocks

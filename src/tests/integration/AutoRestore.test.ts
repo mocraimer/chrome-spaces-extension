@@ -9,6 +9,7 @@ import {
   createPerformanceTrackingServiceMock,
 } from '../utils/serviceMocks';
 import { createMockSpace } from '../mocks/mockTypes';
+import { RestoreRegistry } from '@/background/services/types/RestoreRegistry';
 
 /**
  * @file This file contains integration tests for the auto-restore functionality
@@ -31,13 +32,15 @@ describe.skip('Browser Startup Auto-Restore Tests', () => {
     const updateQueue = createStateUpdateQueueMock();
     const broadcastService = createStateBroadcastServiceMock();
     createPerformanceTrackingServiceMock();
+    const restoreRegistry = new RestoreRegistry();
 
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
 
     // Mock settings loading

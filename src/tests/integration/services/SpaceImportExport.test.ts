@@ -6,6 +6,7 @@ import { StorageManager } from '../../../background/services/StorageManager';
 import { Space } from '../../../shared/types/Space';
 import { SpaceExportData } from '../../../shared/types/ImportExport';
 import { createMockSpace } from '../../mocks/mockTypes';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 
 // SKIPPED: Runtime failures - needs investigation
 describe.skip('Space Import/Export Integration', () => {
@@ -72,13 +73,15 @@ describe.skip('Space Import/Export Integration', () => {
     const broadcastService = {
       broadcast: jest.fn()
     } as any;
+    const restoreRegistry = new RestoreRegistry();
 
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
     importExportService = new SpaceImportExportService(stateManager);
   });

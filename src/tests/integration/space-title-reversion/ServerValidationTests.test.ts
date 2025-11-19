@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import { StateManager } from '../../../background/services/StateManager';
 import { StateUpdateQueue } from '../../../background/services/StateUpdateQueue';
 import { StateBroadcastService } from '../../../background/services/StateBroadcastService';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 import { createWindowManagerMock, createTabManagerMock, createStorageManagerMock } from '../../utils/serviceMocks';
 
 /**
@@ -33,12 +34,14 @@ describe.skip('Server-side Validation Tests for Space Title Reversion', () => {
 
     updateQueue = new StateUpdateQueue();
     broadcastService = new StateBroadcastService();
+    const restoreRegistry = new RestoreRegistry();
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
 
     // Mock chrome runtime

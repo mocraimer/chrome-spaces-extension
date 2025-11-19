@@ -4,6 +4,7 @@ import { StorageManager } from '../../../background/services/StorageManager';
 import { StateManager } from '../../../background/services/StateManager';
 import { StateUpdateQueue } from '../../../background/services/StateUpdateQueue';
 import { StateBroadcastService } from '../../../background/services/StateBroadcastService';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 import { DEFAULT_SPACE_NAME, SPACE_NAME_MAX_LENGTH } from '../../../shared/constants';
 import type { Space } from '../../../shared/types/Space';
 
@@ -47,6 +48,7 @@ describe('StateManager', () => {
     storageManager = new StorageManager() as jest.Mocked<StorageManager>;
     updateQueue = new StateUpdateQueue() as jest.Mocked<StateUpdateQueue>;
     broadcastService = new StateBroadcastService() as jest.Mocked<StateBroadcastService>;
+    const restoreRegistry = new RestoreRegistry();
 
     storageManager.loadSpaces.mockResolvedValue({});
     storageManager.loadClosedSpaces.mockResolvedValue({});
@@ -67,7 +69,8 @@ describe('StateManager', () => {
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
   });
 

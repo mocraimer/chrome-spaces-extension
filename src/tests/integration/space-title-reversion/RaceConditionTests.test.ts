@@ -4,6 +4,7 @@ import { StateManager } from '../../../background/services/StateManager';
 import { StateUpdateQueue, StateUpdatePriority } from '../../../background/services/StateUpdateQueue';
 import { QueuedStateUpdate } from '../../../background/services/StateUpdateQueue';
 import { createWindowManagerMock, createTabManagerMock, createStorageManagerMock } from '../../utils/serviceMocks';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 import { MessageTypes } from '../../../shared/constants';
 
 /**
@@ -43,13 +44,15 @@ describe.skip('Race Condition Tests for Space Title Reversion', () => {
       debounceTime: 100,
       coalesceUpdates: true
     });
+    const restoreRegistry = new RestoreRegistry();
 
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      broadcastService
+      broadcastService,
+      restoreRegistry
     );
 
     // Mock chrome runtime

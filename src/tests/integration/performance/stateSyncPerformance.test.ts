@@ -5,6 +5,7 @@ import { StateManager } from '../../../background/services/StateManager';
 import { StorageManager } from '../../../background/services/StorageManager';
 import { TabManager } from '../../../background/services/TabManager';
 import { StateUpdateQueue, StateUpdatePriority } from '../../../background/services/StateUpdateQueue';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 import '../../../tests/performance/setup';
 
 // SKIPPED: Runtime failures - needs investigation
@@ -26,12 +27,14 @@ describe.skip('State Synchronization Performance Tests', () => {
     tabManager = new TabManager();
     updateQueue = new StateUpdateQueue();
     stateBroadcastService = new StateBroadcastService();
+    const restoreRegistry = new RestoreRegistry();
     stateManager = new StateManager(
       windowManager,
       tabManager,
       storageManager,
       updateQueue,
-      stateBroadcastService
+      stateBroadcastService,
+      restoreRegistry
     );
   });
 

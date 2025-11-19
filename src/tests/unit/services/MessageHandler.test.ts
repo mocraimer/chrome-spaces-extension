@@ -3,6 +3,7 @@ import { WindowManager } from '../../../background/services/WindowManager';
 import { TabManager } from '../../../background/services/TabManager';
 import { StateManager } from '../../../background/services/StateManager';
 import { CommandTypes, MessageTypes } from '../../../shared/constants';
+import { RestoreRegistry } from '../../../background/services/types/RestoreRegistry';
 import { createMockSpace } from '../../mocks/mockTypes';
 
 jest.mock('../../../background/services/WindowManager');
@@ -27,7 +28,8 @@ describe.skip('MessageHandler', () => {
       tabManager,
       {} as any,
       updateQueue,
-      broadcastService
+      broadcastService,
+      new RestoreRegistry()
     ) as jest.Mocked<StateManager>;
 
     // Mock chrome.commands.onCommand listener
@@ -43,7 +45,11 @@ describe.skip('MessageHandler', () => {
       }
     } as any;
 
-    messageHandler = new MessageHandler(windowManager, tabManager, stateManager);
+    messageHandler = new MessageHandler(
+      windowManager,
+      tabManager,
+      stateManager
+    );
   });
 
   describe('keyboard commands', () => {
