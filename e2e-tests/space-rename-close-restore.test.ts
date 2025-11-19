@@ -20,6 +20,9 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
     return popup;
   };
 
+  // Helper for delay
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
   test.beforeAll(async () => {
     context = await chromium.launchPersistentContext('', {
       headless: false,  // Must be false when using --headless=new
@@ -98,7 +101,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
 
     // Wait for the name change to propagate (popup may close, that's okay)
     console.log('[Test] Waiting for name change to propagate');
-    await context.pages()[0].waitForTimeout(2000);
+    await delay(2000);
 
     // Reopen popup to verify the name was actually saved
     console.log('[Test] Reopening popup to verify name');
@@ -117,7 +120,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
     await page1.close();
 
     // Wait for the extension to process the close event
-    await context.pages()[0].waitForTimeout(2000);
+    await delay(2000);
 
     // Step 4: Verify the closed space has the custom name
     console.log('[Test] Step 4: Verifying closed space has custom name');
@@ -145,7 +148,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
     await closedSpaceItem.click();
 
     // Wait for restoration to complete (popup may close)
-    await context.pages()[0].waitForTimeout(3000);
+    await delay(3000);
 
     // Step 6: Verify the restored space STILL has the custom name (not a default name)
     console.log('[Test] Step 6: Verifying restored space has custom name');
@@ -218,7 +221,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
     const nameInput = popup.locator('[data-testid^="edit-input-"]');
     await nameInput.fill(customName);
     await nameInput.press('Enter');
-    await context.pages()[0].waitForTimeout(2000);
+    await delay(2000);
     // Reopen popup to verify
     popup = await openExtensionPopup();
     await popup.waitForSelector('[data-testid^="space-item-"]', { timeout: 10000 });
@@ -232,7 +235,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
       // Close
       console.log(`[Test] Cycle ${i}: Closing space`);
       await page1.close();
-      await context.pages()[0].waitForTimeout(2000);
+      await delay(2000);
 
       // Verify closed space has name
       console.log(`[Test] Cycle ${i}: Verifying closed space name`);
@@ -249,7 +252,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
       console.log(`[Test] Cycle ${i}: Restoring space`);
       const closedSpaceItem = popup.locator(`[data-testid^="space-item-"]:has(.space-name:has-text("${customName}"))`);
       await closedSpaceItem.click();
-      await context.pages()[0].waitForTimeout(3000);
+      await delay(3000);
 
       // Verify restored space has name
       console.log(`[Test] Cycle ${i}: Verifying restored space name`);
@@ -280,7 +283,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
           }
           break;
         }
-        await context.pages()[0].waitForTimeout(500);
+        await delay(500);
       }
 
       if (!restoredPage) {
@@ -320,33 +323,59 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
         
         const spaceItem = popup.locator('[data-testid^="space-item-"]').last();
         
-        // Use F2 for more stability
-        await spaceItem.focus();
-        await popup.keyboard.press('F2');
+        // Enter edit mode - try different methods (copied from first test for robustness)
+        try {
+          // Try clicking edit button first
+          const editButton = spaceItem.locator('[data-testid^="edit-btn-"]');
+          if (await editButton.isVisible({ timeout: 1000 })) {
+            await editButton.click();
+          } else {
+            // Try double-clicking the space item itself
+            await spaceItem.dblclick();
+          }
+        } catch (error) {
+          // Fallback to F2 key
+          await spaceItem.focus();
+          await popup.keyboard.press('F2');
+        }
 
         const nameInput = popup.locator('[data-testid^="edit-input-"]');
         await nameInput.waitFor({ state: 'visible', timeout: 2000 });
         await nameInput.fill(customName);
         await nameInput.press('Enter');
         
+        // Wait for input to disappear
+        try {
+          await nameInput.waitFor({ state: 'detached', timeout: 2000 });
+        } catch (e) {
+          console.log('[Test] Input did not detach, pressing Enter again...');
+          await nameInput.press('Enter');
+        }
+
         // Wait for save
         await expect(popup.locator(`.space-name:has-text("${customName}")`)).toBeVisible({ timeout: 5000 });
         break;
       } catch (e) {
         console.log(`[Test] Setup attempt ${attempt} failed, retrying...`);
-        if (attempt === 2) throw e;
-        await context.pages()[0].waitForTimeout(500);
-      }
+        // Close popup and reopen on retry
+        await popup.close();
+        await delay(1000);
+        if (attempt < 4) {
+           popup = await openExtensionPopup();
+        }
+        
+        if (attempt === 4) throw e; // Changed to throw on last attempt
+
     }
     
     await popup.close();
 
     // Close immediately (no wait)
     console.log('[Test] Closing space immediately');
-    await page1.close();
+    await initialPage.close();
 
     // Restore almost immediately (short wait)
-    await context.pages()[0].waitForTimeout(500);
+    await delay(500);
 
     console.log('[Test] Restoring space immediately');
     popup = await openExtensionPopup();
@@ -361,7 +390,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
     // Restore by clicking the closed space
     const closedSpaceItem = popup.locator(`[data-testid^="space-item-"]:has(.space-name:has-text("${customName}"))`);
     await closedSpaceItem.click();
-    await context.pages()[0].waitForTimeout(2000);
+    await delay(2000);
 
     // Verify restored space has name (despite rapid operations)
     console.log('[Test] Verifying restored space name after rapid operations');
