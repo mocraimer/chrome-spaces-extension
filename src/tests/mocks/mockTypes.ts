@@ -2,32 +2,48 @@ import type { Space } from '@/shared/types/Space';
 
 /**
  * Creates a mock Space object with specified ID and name
- * @param id - Space ID
- * @param name - Space name
- * @param options - Optional overrides for specific fields
+ * Support two signatures:
+ * 1. (id: string, name: string, options?: Partial<Space>)
+ * 2. (options: Partial<Space> & { name?: string, id?: string })
  */
-export const createMockSpace = (
-  id: string,
-  name: string,
+export function createMockSpace(
+  idOrOptions: string | (Partial<Space> & { name?: string, id?: string }),
+  name?: string,
   options?: Partial<Space>
-): Space => ({
-  id,
-  name,
-  urls: [],
-  lastModified: Date.now(),
-  version: 1,
-  lastSync: Date.now(),
-  sourceWindowId: '1', // Default source window
-  named: false,
-  // New required fields
-  permanentId: `perm_${id}`,
-  createdAt: Date.now(),
-  lastUsed: Date.now(),
-  isActive: true,
-  windowId: parseInt(id, 10),
-  // Apply any overrides
-  ...options
-});
+): Space {
+  let finalId = '1';
+  let finalName = 'Test Space';
+  let finalOptions: Partial<Space> = {};
+
+  if (typeof idOrOptions === 'string') {
+    finalId = idOrOptions;
+    finalName = name || 'Test Space';
+    finalOptions = options || {};
+  } else {
+    finalId = idOrOptions.id || '1';
+    finalName = idOrOptions.name || 'Test Space';
+    finalOptions = idOrOptions;
+  }
+
+  return {
+    id: finalId,
+    name: finalName,
+    urls: [],
+    lastModified: Date.now(),
+    version: 1,
+    lastSync: Date.now(),
+    sourceWindowId: '1', // Default source window
+    named: false,
+    // New required fields
+    permanentId: `perm_${finalId}`,
+    createdAt: Date.now(),
+    lastUsed: Date.now(),
+    isActive: true,
+    windowId: parseInt(finalId, 10),
+    // Apply any overrides
+    ...finalOptions
+  };
+}
 
 export const mockSpaces: Record<string, Space> = {
   '1': createMockSpace('1', 'Test Space 1'),

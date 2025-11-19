@@ -115,7 +115,22 @@ export class ExtensionManager {
       }
     }
 
-    // Method 3: Wait for extension page to appear
+    // Method 3: Wait for service worker (MV3 support)
+    try {
+      const worker = await context.waitForEvent('serviceworker', {
+        predicate: worker => worker.url().includes('chrome-extension://'),
+        timeout: 5000
+      });
+      const match = worker.url().match(/chrome-extension:\/\/([a-z]+)/);
+      if (match) {
+        this.extensionId = match[1];
+        return this.extensionId;
+      }
+    } catch (e) {
+      // Ignore timeout and try Method 4
+    }
+
+    // Method 4: Wait for extension page to appear (Fallback)
     const newPage = await context.waitForEvent('page', {
       predicate: page => page.url().includes('chrome-extension://'),
       timeout: 10000

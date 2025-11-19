@@ -1,4 +1,5 @@
 import { Space } from './Space';
+import { RestoreSnapshot } from '../../background/services/types/RestoreRegistry';
 
 export interface TabRecord {
   id: string;
@@ -70,6 +71,15 @@ export interface StateManager {
   updateSpaceWindow(spaceId: string, window: chrome.windows.Window): Promise<void>;
   restoreSpace(spaceId: string): Promise<void>;
   deleteClosedSpace(spaceId: string): Promise<void>;
+  // New functionality
+  registerRestoreIntent(spaceId: string, expectedType?: string): RestoreSnapshot;
+  attachWindowToRestore(spaceId: string, windowId: number): RestoreSnapshot | null;
+  cancelRestoreIntent(spaceId: string): void;
+  handleWindowCreated(window: chrome.windows.Window): Promise<boolean>;
+  ensureInitialized(): Promise<void>;
+  forceSave(): Promise<void>;
+  get_space_by_id_with_reload(spaceId: string): Promise<Space | null>;
+  rekeySpace(oldSpaceId: string, newWindowId: number): Promise<void>;
 }
 
 export interface MessageHandler {

@@ -46,7 +46,7 @@ test.describe('Power User Keyboard-Only Workflow', () => {
     const pages = [];
     for (let i = 0; i < 5; i++) {
       const page = await context.newPage();
-      await page.goto(`https://example${i}.com`);
+      await page.goto(`data:text/html,<html><title>Space ${i}</title><body><h1>Space ${i} Content</h1></body></html>`);
       pages.push(page);
     }
     await pages[0].waitForTimeout(2000); // Let extension register all windows

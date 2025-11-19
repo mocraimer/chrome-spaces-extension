@@ -1,6 +1,9 @@
 import { jest } from '@jest/globals';
 import type { MockedObject } from 'jest-mock';
 import type { WindowManager, TabManager, StateManager, StorageManager } from '@/shared/types/Services';
+import type { StateUpdateQueue } from '@/background/services/StateUpdateQueue';
+import type { StateBroadcastService } from '@/background/services/StateBroadcastService';
+import type { PerformanceTrackingService } from '@/background/services/performance/PerformanceTrackingService';
 
 export const createWindowManagerMock = (): MockedObject<WindowManager> => {
   return {
@@ -49,7 +52,15 @@ export const createStateManagerMock = (): MockedObject<StateManager> => {
     getSpaceById: jest.fn(),
     updateSpaceWindow: jest.fn(),
     restoreSpace: jest.fn(),
-    deleteClosedSpace: jest.fn()
+    deleteClosedSpace: jest.fn(),
+    registerRestoreIntent: jest.fn(),
+    attachWindowToRestore: jest.fn(),
+    cancelRestoreIntent: jest.fn(),
+    handleWindowCreated: jest.fn(),
+    ensureInitialized: jest.fn(),
+    forceSave: jest.fn(),
+    get_space_by_id_with_reload: jest.fn(),
+    rekeySpace: jest.fn()
   };
 };
 
@@ -68,6 +79,33 @@ export const createStorageManagerMock = (): MockedObject<StorageManager> => {
     deleteTabsForSpace: jest.fn(),
     updatePermanentIdMapping: jest.fn()
   };
+};
+
+// New mock creators added to support AutoRestore.test.ts
+export const createStateUpdateQueueMock = (): MockedObject<StateUpdateQueue> => {
+  return {
+    enqueue: jest.fn(),
+    processQueue: jest.fn(),
+    clear: jest.fn(),
+    length: 0,
+    isProcessing: false,
+  } as unknown as MockedObject<StateUpdateQueue>;
+};
+
+export const createStateBroadcastServiceMock = (): MockedObject<StateBroadcastService> => {
+  return {
+    broadcast: jest.fn()
+  } as unknown as MockedObject<StateBroadcastService>;
+};
+
+export const createPerformanceTrackingServiceMock = (): MockedObject<PerformanceTrackingService> => {
+  return {
+    track: jest.fn(),
+    getMetrics: jest.fn(),
+    clearMetrics: jest.fn(),
+    measure: jest.fn(),
+    measureAsync: jest.fn()
+  } as unknown as MockedObject<PerformanceTrackingService>;
 };
 
 export const mockChrome = {

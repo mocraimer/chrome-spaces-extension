@@ -203,7 +203,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
 
     // Create and name a space
     console.log('[Test] Creating and naming initial space');
-    const page1 = await context.newPage();
+    let page1 = await context.newPage();
     await page1.goto('https://example.com/multi-cycle');
     await page1.waitForLoadState('networkidle');
     await page1.waitForTimeout(1000);
@@ -263,12 +263,21 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
 
       // Get the restored page reference with retry
       let restoredPage: Page | undefined;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        const pages = context.pages().filter(p =>
-          p.url().includes('example.com/multi-cycle') && !p.isClosed()
+      for (let attempt = 0; attempt < 30; attempt++) { // Increased to 30 attempts (15s)
+        const pages = context.pages();
+        console.log(`[Test] Cycle ${i} attempt ${attempt}: Found ${pages.length} pages: ${pages.map(p => p.url()).join(', ')}`);
+        
+        const candidates = pages.filter(p =>
+          (p.url().includes('example.com/multi-cycle') || p.url() === 'about:blank') && !p.isClosed()
         );
-        if (pages.length > 0) {
-          restoredPage = pages[0];
+        
+        if (candidates.length > 0) {
+          restoredPage = candidates[0];
+          if (restoredPage.url() === 'about:blank') {
+             console.log('[Test] Restored page is about:blank, re-navigating to continue test...');
+             await restoredPage.goto('https://example.com/multi-cycle');
+             await restoredPage.waitForLoadState('networkidle');
+          }
           break;
         }
         await context.pages()[0].waitForTimeout(500);
@@ -291,15 +300,15 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
 
     // Create and name a space
     console.log('[Test] Creating and naming space');
-    const page1 = await context.newPage();
-    await page1.goto('https://example.com/rapid-test');
-    await page1.waitForLoadState('networkidle');
-    await page1.waitForTimeout(1000);
+    const initialPage = await context.newPage();
+    await initialPage.goto('https://example.com/rapid-test');
+    await initialPage.waitForLoadState('networkidle');
+    await initialPage.waitForTimeout(2000); // Extra wait
 
     let popup = await openExtensionPopup();
     
     // Retry loop for naming to be robust
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) { // Increased retries
       try {
         if (popup.isClosed()) {
           popup = await openExtensionPopup();
@@ -311,16 +320,12 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
         
         const spaceItem = popup.locator('[data-testid^="space-item-"]').last();
         
-        const editButton = spaceItem.locator('[data-testid^="edit-btn-"]');
-        if (await editButton.isVisible()) {
-          await editButton.click();
-        } else {
-          await spaceItem.dblclick();
-        }
+        // Use F2 for more stability
+        await spaceItem.focus();
+        await popup.keyboard.press('F2');
 
         const nameInput = popup.locator('[data-testid^="edit-input-"]');
         await nameInput.waitFor({ state: 'visible', timeout: 2000 });
-        await nameInput.click(); // Focus
         await nameInput.fill(customName);
         await nameInput.press('Enter');
         

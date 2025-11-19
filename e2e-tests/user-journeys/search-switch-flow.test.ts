@@ -58,7 +58,8 @@ test.describe('Search and Switch Flow Journey', () => {
 
     for (let i = 0; i < spaceNames.length; i++) {
       const page = await context.newPage();
-      await page.goto(`https://example${i}.com`);
+      // Use data URI with title matching the intended space name for realism
+      await page.goto(`data:text/html,<html><title>${spaceNames[i]}</title><body><h1>${spaceNames[i]}</h1></body></html>`);
     }
 
     await context.pages()[0].waitForTimeout(2000);

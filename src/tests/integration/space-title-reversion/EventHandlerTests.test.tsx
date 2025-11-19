@@ -62,7 +62,7 @@ describe.skip('Event Handler Interference Tests for Space Title Reversion', () =
 
       // Arrange
       const mockSendMessage = jest.fn();
-      global.chrome.runtime.sendMessage = mockSendMessage;
+      global.chrome.runtime.sendMessage = mockSendMessage as unknown as any;
 
       const TestComponent: FC = () => {
         const [isEditing, setIsEditing] = useState(false);
@@ -223,7 +223,7 @@ describe.skip('Event Handler Interference Tests for Space Title Reversion', () =
 
       // Arrange
       const mockSendMessage = jest.fn();
-      global.chrome.runtime.sendMessage = mockSendMessage;
+      global.chrome.runtime.sendMessage = mockSendMessage as unknown as any;
 
       const TestComponent: FC = () => {
         const [value, setValue] = useState('');
@@ -438,7 +438,7 @@ describe.skip('Event Handler Interference Tests for Space Title Reversion', () =
           savePromiseResolve = resolve;
         });
       });
-      global.chrome.runtime.sendMessage = mockSendMessage;
+      global.chrome.runtime.sendMessage = mockSendMessage as unknown as any;
 
       const TestComponent: FC = () => {
         const [isEditing, setIsEditing] = useState(false);

@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { SpaceHeader } from '../../../popup/components/SpaceHeader';
@@ -34,7 +35,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
   };
 
   const mockChromeApi = () => {
-    const mockSendMessage = jest.fn<Promise<any>, [any, ((response: any) => void)?]>();
+    const mockSendMessage = jest.fn();
     global.chrome = {
       runtime: {
         sendMessage: mockSendMessage as any,

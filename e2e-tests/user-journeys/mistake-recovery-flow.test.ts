@@ -45,10 +45,10 @@ test.describe('Mistake Recovery Journey', () => {
     console.log('🎬 Setting up important work space with multiple tabs...');
     const pages = [];
     const urls = [
-      'https://github.com/myproject',
-      'https://docs.myproject.com',
-      'https://stackoverflow.com/questions/myissue',
-      'https://localhost:3000',
+      'data:text/html,<html><title>Project GitHub</title><body><h1>GitHub</h1></body></html>',
+      'data:text/html,<html><title>Project Docs</title><body><h1>Documentation</h1></body></html>',
+      'data:text/html,<html><title>StackOverflow Issue</title><body><h1>StackOverflow</h1></body></html>',
+      'data:text/html,<html><title>Localhost App</title><body><h1>App</h1></body></html>',
     ];
 
     for (const url of urls) {

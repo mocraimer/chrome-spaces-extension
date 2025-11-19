@@ -45,7 +45,7 @@ test.describe('Space Organization Journey', () => {
     console.log('🎬 Creating messy browser environment with 12 unnamed spaces...');
     for (let i = 0; i < 12; i++) {
       const page = await context.newPage();
-      await page.goto(`https://example${i}.com`);
+      await page.goto(`data:text/html,<html><title>Unorganized Page ${i}</title><body><h1>Page ${i}</h1></body></html>`);
     }
     await context.pages()[0].waitForTimeout(2000);
     console.log('✅ Messy environment created');
