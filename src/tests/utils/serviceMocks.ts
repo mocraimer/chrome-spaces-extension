@@ -60,7 +60,9 @@ export const createStateManagerMock = (): MockedObject<StateManager> => {
     ensureInitialized: jest.fn(),
     forceSave: jest.fn(),
     get_space_by_id_with_reload: jest.fn(),
-    rekeySpace: jest.fn()
+    rekeySpace: jest.fn(),
+    addClosedSpace: jest.fn(),
+    reloadSpaces: jest.fn()
   };
 };
 

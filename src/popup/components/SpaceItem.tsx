@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useCallback } from 'react';
 import { Space } from '../../shared/types/Space';
 import { useAppDispatch } from '../../shared/hooks/storeHooks';
-import { renameSpace, toggleEditMode } from '../store/slices/spacesSlice';
+import { renameSpace, toggleEditMode, selectSpace } from '../store/slices/spacesSlice';
 import { injectSpaceItemStyles } from './SpaceItem.styles';
 import { debounce } from '../../shared/utils';
 
@@ -126,6 +126,7 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    dispatch(selectSpace(space.id));
                     dispatch(toggleEditMode());
                   }}
                   title="Edit space name"

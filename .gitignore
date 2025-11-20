@@ -69,3 +69,4 @@ CLAUDE.md
 .test-user-data-diagnostic/
 diagnostic-test-log.json
 
+.test-user-data-core/

@@ -176,7 +176,7 @@ describe('ExportManager', () => {
         {
           url: 'blob:url',
           filename,
-          saveAs: true
+          saveAs: false
         },
         expect.any(Function)
       );
