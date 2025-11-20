@@ -44,7 +44,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
         }
       }
     } as any;
-    return mockSendMessage as jest.Mock<Promise<any>>;
+    return mockSendMessage as jest.Mock<any>;
   };
 
   beforeEach(() => {
@@ -133,7 +133,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
       // Assert
       const state = store.getState();
       expect(state.spaces.spaces['1'].name).toBe('Updated Name');
-      
+
       // Verify UI reflects the change
       await waitFor(() => {
         expect(getByRole('heading')).toHaveTextContent('Updated Name');
@@ -192,7 +192,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
 
       // Arrange
       const mockSendMessage = mockChromeApi();
-      mockSendMessage.mockImplementation(() => 
+      mockSendMessage.mockImplementation(() =>
         new Promise((_, reject) => setTimeout(() => reject(new Error('Network error')), 100))
       );
 
@@ -220,7 +220,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
 
       // Wait for failure and advance timers
       jest.advanceTimersByTime(150);
-      
+
       await waitFor(() => {
         expect(mockSendMessage).toHaveBeenCalled();
       });
@@ -241,7 +241,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
 
       // Arrange
       const mockSendMessage = mockChromeApi();
-      
+
       // Simulate delayed responses
       let callCount = 0;
       mockSendMessage.mockImplementation(() => {
@@ -263,7 +263,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
 
       // Simulate first call success, second call failure
       await store.dispatch(renameSpace({ windowId: 1, name: 'First Update' }));
-      
+
       try {
         await store.dispatch(renameSpace({ windowId: 1, name: 'Second Update' }));
       } catch (error) {
@@ -331,7 +331,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
       // Assert - UI should maintain new name
       const currentState = store.getState();
       expect(currentState.spaces.spaces['1'].name).toBe('New Name');
-      
+
       await waitFor(() => {
         expect(getByRole('heading')).toHaveTextContent('New Name');
       });
@@ -456,7 +456,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
             lastSync: Date.now() + i
           }
         });
-        
+
         // Small delay to simulate real-time updates
         await new Promise(resolve => setTimeout(resolve, 10));
       }
@@ -585,7 +585,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
 
       // In a real implementation, these would be processed by state handlers
       // For testing, we simulate the expected behavior
-      
+
       // Lower version should be ignored
       const stateAfterLower = store.getState();
       expect(stateAfterLower.spaces.spaces['1'].name).toBe('Test Space'); // Original name

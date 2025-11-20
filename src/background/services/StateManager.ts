@@ -49,20 +49,20 @@ export class StateManager implements IStateManager {
     private updateQueue: StateUpdateQueue,
     private broadcastService: StateBroadcastService,
     private restoreRegistry: RestoreRegistry
-  ) {}
+  ) { }
 
   /**
    * Creates an incremental state update
    */
   private createIncrementalUpdate(oldState: any, newState: any): any {
     const diff: any = {};
-    
+
     for (const key in newState) {
       if (!oldState || oldState[key] !== newState[key]) {
         diff[key] = newState[key];
       }
     }
-    
+
     return Object.keys(diff).length > 0 ? diff : null;
   }
 
@@ -255,7 +255,7 @@ export class StateManager implements IStateManager {
   }
 
   hasSpace(windowId: number): boolean {
-    return Object.values(this.spaces).some(space => 
+    return Object.values(this.spaces).some(space =>
       space.sourceWindowId === windowId.toString()
     );
   }
@@ -302,7 +302,7 @@ export class StateManager implements IStateManager {
   @PerformanceTrackingService.track(MetricCategories.STATE, 500)
   async updateSpaceWindow(spaceId: string, window: chrome.windows.Window): Promise<void> {
     await this.acquireLock(spaceId);
-    
+
     try {
       const space = await this.getSpaceById(spaceId);
       if (!space) {
@@ -359,7 +359,7 @@ export class StateManager implements IStateManager {
     if (oldState.id !== newState.id) {
       throw new Error('Space ID cannot change during update');
     }
-    
+
     if (newState.version <= oldState.version) {
       throw new Error('Space version must increase on update');
     }
@@ -524,8 +524,14 @@ export class StateManager implements IStateManager {
     const tabs = await this.tabManager.getTabs(window.id);
     const currentUrls = tabs.map(tab => this.tabManager.getTabUrl(tab));
 
-    // If window has no tabs or space has no URLs, can't validate
+    // If window has no tabs or space has no URLs, can't validate by URLs
     if (currentUrls.length === 0 || !space.urls || space.urls.length === 0) {
+      // CRITICAL FIX: If the space explicitly claims this window ID as its source,
+      // and it has no URLs (e.g. new window created before tabs were ready),
+      // we MUST trust the ID match to avoid discarding the space.
+      if (space.sourceWindowId === window.id.toString()) {
+        return true;
+      }
       return false;
     }
 
@@ -561,17 +567,17 @@ export class StateManager implements IStateManager {
         isMarkedRestoring: this.restoreRegistry.isWindowRestoring(window.id),
         existingActiveSpace: this.spaces[window.id.toString()]
           ? {
-              id: window.id.toString(),
-              name: this.spaces[window.id.toString()].name,
-              named: this.spaces[window.id.toString()].named
-            }
+            id: window.id.toString(),
+            name: this.spaces[window.id.toString()].name,
+            named: this.spaces[window.id.toString()].named
+          }
           : null,
         existingClosedSpace: this.closedSpaces[window.id.toString()]
           ? {
-              id: window.id.toString(),
-              name: this.closedSpaces[window.id.toString()].name,
-              named: this.closedSpaces[window.id.toString()].named
-            }
+            id: window.id.toString(),
+            name: this.closedSpaces[window.id.toString()].name,
+            named: this.closedSpaces[window.id.toString()].named
+          }
           : null
       });
 
@@ -640,7 +646,7 @@ export class StateManager implements IStateManager {
 
         // CRITICAL: Check for concurrent updates to name/named status (e.g. user renamed while sync was running)
         // Note: Reverted to simple update to avoid potential deadlock or state mismatch issues
-        
+
         updatedSpaces[existingSpace.id] = {
           ...existingSpace,
           urls, // Update URLs from current tabs
@@ -837,7 +843,7 @@ export class StateManager implements IStateManager {
   async createSpace(windowId: number, spaceName?: string, options?: { name?: string; named?: boolean }): Promise<void> {
     const spaceId = windowId.toString();
     await this.acquireLock(spaceId);
-    
+
     try {
       if (this.restoreRegistry.isWindowRestoring(windowId)) {
         console.log('[StateManager] createSpace skipped - window is under restoration', {
@@ -866,8 +872,13 @@ export class StateManager implements IStateManager {
         throw new Error(`Space already exists with ID: ${spaceId}`);
       }
 
-      // Get tabs from window
-      const tabs = await this.tabManager.getTabs(windowId);
+      // Get tabs from window - retry if empty as window might be initializing
+      let tabs = await this.tabManager.getTabs(windowId);
+      if (tabs.length === 0) {
+        console.log('[StateManager] No tabs found in new window, retrying after delay...');
+        await new Promise(resolve => setTimeout(resolve, 200));
+        tabs = await this.tabManager.getTabs(windowId);
+      }
       const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
 
       // Create new space using StorageManager
@@ -887,7 +898,7 @@ export class StateManager implements IStateManager {
       const updatedSpaces = { ...this.spaces, [spaceId]: space };
       await this.storageManager.saveSpaces(updatedSpaces);
       this.spaces = updatedSpaces;
-      
+
       this.broadcastStateUpdate();
     } catch (error) {
       throw new Error(`Failed to create space: ${(error as Error).message}`);
@@ -1230,10 +1241,10 @@ export class StateManager implements IStateManager {
     console.log('[StateManager] Reloading spaces from storage...');
     this.spaces = await this.storageManager.loadSpaces();
     this.closedSpaces = await this.storageManager.loadClosedSpaces();
-    
+
     this.invalidateCache('spaces');
     this.invalidateCache('closedSpaces');
-    
+
     this.broadcastStateUpdate();
     console.log('[StateManager] Spaces reloaded');
   }
@@ -1254,7 +1265,7 @@ export class StateManager implements IStateManager {
     try {
       // Add to closed spaces
       const updatedClosedSpaces = { ...this.closedSpaces, [spaceId]: space };
-      
+
       // If it exists in active spaces, remove it? 
       // ImportManager logic says "import as closed".
       // If we overwrite an active space with a closed space, we should probably remove it from active.
@@ -1273,7 +1284,7 @@ export class StateManager implements IStateManager {
 
       await this.storageManager.saveClosedSpaces(updatedClosedSpaces);
       this.closedSpaces = updatedClosedSpaces;
-      
+
       this.broadcastStateUpdate();
     } finally {
       this.releaseLock(spaceId);

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ImportExport } from '../../../options/components/import-export/ImportExport';
 import { SpaceImportExportService } from '../../../background/services/SpaceImportExportService';
 import { ImportResult } from '../../../shared/types/ImportExport';
+import '@testing-library/jest-dom';
 
 // Mock the styled components to avoid styled-components issues in tests
 jest.mock('../../../options/components/import-export/ImportExport.styles', () => ({
@@ -20,7 +21,7 @@ jest.mock('../../../options/components/import-export/ImportExport.styles', () =>
 // SKIPPED: Runtime failures - needs investigation
 describe.skip('ImportExport', () => {
   let mockImportExportService: jest.Mocked<SpaceImportExportService>;
-  
+
   const successfulImportResult: ImportResult = {
     success: true,
     imported: { active: 2, closed: 1 },
@@ -43,14 +44,14 @@ describe.skip('ImportExport', () => {
   describe('rendering', () => {
     it('should render import and export buttons', () => {
       renderComponent();
-      
+
       expect(screen.getByText('Import Spaces')).toBeInTheDocument();
       expect(screen.getByText('Export Spaces')).toBeInTheDocument();
     });
 
     it('should have hidden file input with correct attributes', () => {
       renderComponent();
-      
+
       const fileInput = screen.getByLabelText('Import spaces from file');
       expect(fileInput).toHaveAttribute('type', 'file');
       expect(fileInput).toHaveAttribute('accept', '.json');
@@ -69,11 +70,11 @@ describe.skip('ImportExport', () => {
       mockImportExportService.importFromFile.mockResolvedValue(successfulImportResult);
 
       renderComponent();
-      
+
       // Act
       const file = new File(['{}'], 'test.json', { type: 'application/json' });
       const fileInput = screen.getByLabelText('Import spaces from file');
-      
+
       fireEvent.change(fileInput, { target: { files: [file] } });
 
       // Assert
@@ -94,11 +95,11 @@ describe.skip('ImportExport', () => {
       mockImportExportService.validateImportFile.mockResolvedValue(validationError);
 
       renderComponent();
-      
+
       // Act
       const file = new File(['invalid'], 'test.json', { type: 'application/json' });
       const fileInput = screen.getByLabelText('Import spaces from file');
-      
+
       fireEvent.change(fileInput, { target: { files: [file] } });
 
       // Assert
@@ -118,11 +119,11 @@ describe.skip('ImportExport', () => {
       mockImportExportService.importFromFile.mockRejectedValue(new Error('Import failed'));
 
       renderComponent();
-      
+
       // Act
       const file = new File(['{}'], 'test.json', { type: 'application/json' });
       const fileInput = screen.getByLabelText('Import spaces from file');
-      
+
       fireEvent.change(fileInput, { target: { files: [file] } });
 
       // Assert
@@ -139,17 +140,17 @@ describe.skip('ImportExport', () => {
       mockImportExportService.importFromFile.mockResolvedValue(successfulImportResult);
 
       renderComponent();
-      
+
       // Act
       const file = new File(['{}'], 'test.json', { type: 'application/json' });
       const fileInput = screen.getByLabelText('Import spaces from file');
-      
+
       fireEvent.change(fileInput, { target: { files: [file] } });
 
       // Assert
       const buttons = screen.getAllByRole('button') as HTMLButtonElement[];
       expect(buttons.every(button => button.disabled)).toBe(true);
-      
+
       await waitFor(() => {
         expect(buttons.every(button => !button.disabled)).toBe(true);
       });
@@ -161,7 +162,7 @@ describe.skip('ImportExport', () => {
       // Arrange
       mockImportExportService.exportToFile.mockResolvedValue();
       renderComponent();
-      
+
       // Act
       fireEvent.click(screen.getByText('Export Spaces'));
 
@@ -176,7 +177,7 @@ describe.skip('ImportExport', () => {
       // Arrange
       mockImportExportService.exportToFile.mockRejectedValue(new Error('Export failed'));
       renderComponent();
-      
+
       // Act
       fireEvent.click(screen.getByText('Export Spaces'));
 
@@ -192,14 +193,14 @@ describe.skip('ImportExport', () => {
         () => new Promise(resolve => setTimeout(resolve, 100))
       );
       renderComponent();
-      
+
       // Act
       fireEvent.click(screen.getByText('Export Spaces'));
 
       // Assert
       const buttons = screen.getAllByRole('button') as HTMLButtonElement[];
       expect(buttons.every(button => button.disabled)).toBe(true);
-      
+
       await waitFor(() => {
         expect(buttons.every(button => !button.disabled)).toBe(true);
       });
@@ -211,7 +212,7 @@ describe.skip('ImportExport', () => {
       // Arrange
       mockImportExportService.exportToFile.mockResolvedValue();
       renderComponent();
-      
+
       // Act
       fireEvent.click(screen.getByText('Export Spaces'));
 
@@ -227,7 +228,7 @@ describe.skip('ImportExport', () => {
       // Arrange
       mockImportExportService.exportToFile.mockRejectedValue(new Error('Export failed'));
       renderComponent();
-      
+
       // Act
       fireEvent.click(screen.getByText('Export Spaces'));
 
@@ -245,14 +246,14 @@ describe.skip('ImportExport', () => {
         () => new Promise(resolve => setTimeout(resolve, 100))
       );
       renderComponent();
-      
+
       // Act
       fireEvent.click(screen.getByText('Export Spaces'));
 
       // Assert
       const buttons = screen.getAllByRole('button');
       expect(buttons.every(button => button.getAttribute('aria-busy') === 'true')).toBe(true);
-      
+
       await waitFor(() => {
         expect(buttons.every(button => !button.hasAttribute('aria-busy'))).toBe(true);
       });
