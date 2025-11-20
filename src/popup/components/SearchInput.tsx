@@ -47,6 +47,11 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
     // Allow parent to handle key events (like arrow keys for navigation)
     if (onKeyDown) {
       onKeyDown(e);
+      // If the parent handled the event (prevented default), stop propagation
+      // to prevent the event from bubbling up to the container which might also handle it
+      if (e.defaultPrevented) {
+        e.stopPropagation();
+      }
     }
   };
 
