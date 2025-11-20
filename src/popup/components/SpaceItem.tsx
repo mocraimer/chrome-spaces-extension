@@ -139,7 +139,15 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
           </div>
 
           {/* Space content - this area can be clicked to switch spaces */}
-          <div className="space-content">
+          <div 
+            className="space-content"
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              dispatch(selectSpace(space.id));
+              dispatch(toggleEditMode());
+            }}
+          >
             <span className="space-icon">🖥️</span>
             <span className="space-tabs-count">
               {space.urls.length} {space.urls.length === 1 ? 'tab' : 'tabs'}

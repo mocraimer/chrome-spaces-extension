@@ -17,7 +17,8 @@
       "node",
       "jest",
       "chrome",
-      "@playwright/test"
+      "@playwright/test",
+      "@testing-library/jest-dom"
     ],
     "lib": [
       "ES2020",

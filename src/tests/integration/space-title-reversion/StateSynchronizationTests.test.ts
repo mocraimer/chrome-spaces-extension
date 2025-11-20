@@ -44,7 +44,7 @@ describe.skip('State Synchronization Tests for Space Title Reversion', () => {
         }
       }
     } as any;
-    return mockSendMessage as jest.Mock<any>;
+    return mockSendMessage as jest.Mock<(...args: any[]) => Promise<any>>;
   };
 
   beforeEach(() => {

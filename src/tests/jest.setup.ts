@@ -133,19 +133,3 @@ afterEach(() => {
   jest.resetModules();
 });
 
-// Type augmentation for Jest matchers
-declare global {
-  namespace jest {
-    interface Matchers<R> {
-      toHaveBeenCalledWith(expected: any): R;
-      toHaveBeenCalled(): R;
-      toHaveBeenCalledTimes(times: number): R;
-      toBeInTheDocument(): R;
-      toHaveTextContent(expected: string | RegExp, options?: { normalizeWhitespace?: boolean }): R;
-      toHaveClass(...classNames: string[]): R;
-      toHaveAttribute(attr: string, value?: any): R;
-      toHaveStyle(style: Record<string, any> | string): R;
-      toHaveValue(value: string | number | string[]): R;
-    }
-  }
-}
