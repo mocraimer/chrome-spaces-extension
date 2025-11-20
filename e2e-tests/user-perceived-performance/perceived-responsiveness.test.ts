@@ -138,8 +138,9 @@ test.describe('Perceived Responsiveness - User-Perceived Performance', () => {
       return;
     }
 
-    // Double-click to edit
-    await spaceItem.dblclick();
+    // Click and F2 to edit
+    await spaceItem.click();
+    await page.keyboard.press('F2');
 
     const input = page.locator('input[type="text"]').first();
 

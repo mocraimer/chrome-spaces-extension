@@ -50,7 +50,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
     await spaceItem.waitFor({ state: 'visible', timeout: 10000 });
 
     const spaceNameDisplay = spaceItem.locator('.space-name');
-    await spaceNameDisplay.dblclick();
+    await spaceItem.click();
+    await popup.keyboard.press('F2');
 
     const nameInput = spaceItem.locator('[data-testid="space-name-input"]');
     await nameInput.waitFor({ state: 'visible' });
@@ -120,8 +121,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
       if (await editButton.isVisible()) {
         await editButton.click();
       } else {
-        const spaceName = spaceItem.locator('.space-name');
-        await spaceName.dblclick();
+        await spaceItem.click();
+        await popup.keyboard.press('F2');
       }
 
       // Edit name
@@ -180,7 +181,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
     if (await editButton.isVisible()) {
       await editButton.click();
     } else {
-      await spaceItem.locator('.space-name').dblclick();
+      await spaceItem.click();
+      await popup.keyboard.press('F2');
     }
 
     const nameInput = popup.locator('[data-testid="space-name-input"]');
@@ -260,7 +262,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
     if (await editButton.isVisible()) {
       await editButton.click();
     } else {
-      await spaceItem.locator('.space-name').dblclick();
+      await spaceItem.click();
+      await popup.keyboard.press('F2');
     }
 
     const nameInput = popup.locator('[data-testid="space-name-input"]');
@@ -318,7 +321,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
         if (await editButton.isVisible()) {
           await editButton.click();
         } else {
-          await spaceItem.locator('.space-name').dblclick();
+          await spaceItem.click();
+          await popup.keyboard.press('F2');
         }
 
         const nameInput = popup1.locator('[data-testid="space-name-input"]');
@@ -336,7 +340,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
         if (await editButton.isVisible()) {
           await editButton.click();
         } else {
-          await spaceItem.locator('.space-name').dblclick();
+          await spaceItem.click();
+          await popup.keyboard.press('F2');
         }
 
         const nameInput = popup2.locator('[data-testid="space-name-input"]');
@@ -368,7 +373,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
     if (await editButton.isVisible()) {
       await editButton.click();
     } else {
-      await spaceItem.locator('.space-name').dblclick();
+      await spaceItem.click();
+      await popup.keyboard.press('F2');
     }
 
     // Verify edit mode is active
@@ -409,7 +415,8 @@ test.describe('Space Name Persistence E2E Tests', () => {
         if (await editButton.isVisible()) {
           await editButton.click();
         } else {
-          await spaceItem.locator('.space-name').dblclick();
+          await spaceItem.click();
+          await popup.keyboard.press('F2');
         }
 
         const nameInput = popup.locator('[data-testid="space-name-input"]');

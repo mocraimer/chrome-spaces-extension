@@ -78,7 +78,8 @@ test.describe('Mistake Recovery Journey', () => {
     const spaceItems = popupPage.locator('.active-spaces .space-item');
     const importantSpace = spaceItems.first();
 
-    await importantSpace.dblclick();
+    await importantSpace.click();
+    await popupPage.keyboard.press('F2');
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -279,7 +280,8 @@ test.describe('Mistake Recovery Journey', () => {
         console.log(`\n📝 Found space: "${name}"`);
         console.log('⌨️  Renaming to be extra clear...');
 
-        await space.dblclick();
+        await space.click();
+        await popupPage.keyboard.press('F2');
         await popupPage.waitForTimeout(500);
 
         const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -318,7 +320,8 @@ test.describe('Mistake Recovery Journey', () => {
     const spaceItems = popupPage.locator('.active-spaces .space-item');
     const lastSpace = spaceItems.last();
 
-    await lastSpace.dblclick();
+    await lastSpace.click();
+    await popupPage.keyboard.press('F2');
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();

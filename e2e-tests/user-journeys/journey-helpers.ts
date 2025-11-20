@@ -95,18 +95,14 @@ export class JourneyHelper {
   async renameSpace(
     spaceIndex: number,
     newName: string,
-    method: 'dblclick' | 'f2' = 'dblclick'
+    method: 'click' | 'f2' = 'f2'
   ): Promise<boolean> {
     const spaceItems = this.page.locator('.active-spaces .space-item');
     const targetSpace = spaceItems.nth(spaceIndex);
 
     // User initiates edit
-    if (method === 'dblclick') {
-      await targetSpace.dblclick();
-    } else {
-      await targetSpace.click();
-      await this.page.keyboard.press('F2');
-    }
+    await targetSpace.click();
+    await this.page.keyboard.press('F2');
 
     await this.page.waitForTimeout(TIMING.CLICK_DELAY);
 

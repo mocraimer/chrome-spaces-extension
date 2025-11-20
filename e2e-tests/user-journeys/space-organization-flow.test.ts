@@ -109,8 +109,9 @@ test.describe('Space Organization Journey', () => {
       const spaceItems = popupPage.locator('.active-spaces .space-item');
       const targetSpace = spaceItems.nth(i);
 
-      // Double-click to edit
-      await targetSpace.dblclick();
+      // Edit with F2
+      await targetSpace.click();
+      await popupPage.keyboard.press('F2');
       await popupPage.waitForTimeout(500);
 
       const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -151,7 +152,8 @@ test.describe('Space Organization Journey', () => {
       // Start from index 4 (after work spaces)
       const targetSpace = spaceItems.nth(i + 4);
 
-      await targetSpace.dblclick();
+      await targetSpace.click();
+      await popupPage.keyboard.press('F2');
       await popupPage.waitForTimeout(500);
 
       const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -191,7 +193,8 @@ test.describe('Space Organization Journey', () => {
       const spaceItems = popupPage.locator('.active-spaces .space-item');
       const targetSpace = spaceItems.nth(i + 7); // After work and personal
 
-      await targetSpace.dblclick();
+      await targetSpace.click();
+      await popupPage.keyboard.press('F2');
       await popupPage.waitForTimeout(500);
 
       const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
