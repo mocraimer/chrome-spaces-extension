@@ -49,14 +49,8 @@ export class StateManagerAdapter {
   }
 
   private async importClosedSpaces(spaces: Record<string, any>): Promise<void> {
-<<<<<<< Current (Your changes)
-    for (const [id, space] of Object.entries(spaces)) {
-      // Use the new importClosedSpace method directly
-      await this.stateManager.importClosedSpace(space as Space);
-=======
     for (const space of Object.values(spaces)) {
       await this.stateManager.addClosedSpace(space);
->>>>>>> Incoming (Background Agent changes)
     }
 
     this.broadcastUpdate();

@@ -34,16 +34,6 @@ export class MessageHandler implements IMessageHandler {
       return;
     }
 
-<<<<<<< Current (Your changes)
-    if (request.type === 'DEBUG_RELOAD_STATE') {
-      try {
-        console.log('[MessageHandler] Debug reload state requested');
-        // Force reload from storage
-        await this.stateManager.get_space_by_id_with_reload('dummy');
-        sendResponse({ success: true });
-      } catch (error) {
-        console.error('[MessageHandler] Debug reload failed:', error);
-=======
     if (request.type === 'RELOAD_STATE') {
       try {
         console.log('[MessageHandler] Reload state requested');
@@ -51,7 +41,6 @@ export class MessageHandler implements IMessageHandler {
         sendResponse({ success: true });
       } catch (error) {
         console.error('[MessageHandler] Reload state failed:', error);
->>>>>>> Incoming (Background Agent changes)
         sendResponse({
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'

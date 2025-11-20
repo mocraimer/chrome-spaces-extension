@@ -67,8 +67,8 @@ const UnifiedPopup: React.FC = () => {
         }
 
         // Fetch all spaces data from background service
-        const result = await dispatch(fetchSpaces()).unwrap();
-        console.log('UnifiedPopup fetched spaces:', result);
+        await dispatch(fetchSpaces());
+        console.log('UnifiedPopup fetched spaces');
       } catch (err) {
         console.error('Failed to initialize popup:', err);
       }
