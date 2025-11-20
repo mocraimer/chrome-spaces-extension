@@ -6,7 +6,7 @@ export class ImportManager {
   constructor(
     private readonly stateManager: { 
       getState: () => SpaceState;
-      dispatch: (action: { type: string; payload: any }) => void;
+      dispatch: (action: { type: string; payload: any }) => Promise<void> | void;
       synchronizeWindowsAndSpaces?: () => Promise<void>;
     },
     private readonly validationEngine: ValidationEngine
@@ -59,7 +59,7 @@ export class ImportManager {
         );
         
         if (Object.keys(closedSpaces).length > 0) {
-          this.stateManager.dispatch({
+          await this.stateManager.dispatch({
             type: 'spaces/importClosed',
             payload: closedSpaces
           });

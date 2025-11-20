@@ -46,6 +46,7 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
   };
 
   const totalItems = spaces.length + closedSpaces.length;
+  console.log('UnifiedSpacesList rendering:', { spacesCount: spaces.length, closedSpacesCount: closedSpaces.length });
 
   if (totalItems === 0) {
     return (

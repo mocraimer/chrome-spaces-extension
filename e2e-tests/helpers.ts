@@ -7,9 +7,34 @@ import * as path from 'path';
 /**
  * Set the initial state for the extension
  */
-export async function setupExtensionState(page: Page, state: Partial<SpaceState>) {
+export async function setupExtensionState(page: Page, state: any) {
   await page.evaluate(async (initialState) => {
-    await chrome.storage.local.set({ state: initialState });
+    const fullState = {
+      spaces: {},
+      closedSpaces: {},
+      permanentIdMappings: {},
+      lastModified: Date.now(),
+      version: 1,
+      ...initialState
+    };
+    
+    // Use the correct storage key 'chrome_spaces'
+    await chrome.storage.local.set({ chrome_spaces: fullState });
+
+    // Notify background to reload state from storage
+    try {
+      await new Promise<void>((resolve) => {
+        chrome.runtime.sendMessage({ type: 'RELOAD_STATE' }, () => {
+          // Ignore errors/response, just fire and forget/wait for callback
+          if (chrome.runtime.lastError) {
+            console.log('Reload signal ignored (background likely inactive)');
+          }
+          resolve();
+        });
+      });
+    } catch (e) {
+      console.log('Error sending reload signal:', e);
+    }
   }, state);
 }
 
@@ -87,10 +112,10 @@ export async function readDownloadedFile(filePath: string): Promise<SpaceExportD
 /**
  * Verify the extension state after import
  */
-export async function verifyExtensionState(page: Page): Promise<SpaceState> {
+export async function verifyExtensionState(page: Page): Promise<any> {
   return await page.evaluate(async () => {
-    const result = await chrome.storage.local.get('state');
-    return result.state;
+    const result = await chrome.storage.local.get('chrome_spaces');
+    return result.chrome_spaces;
   });
 }
 

@@ -46,7 +46,7 @@ export class ExportManager {
       const downloadOptions = {
         url,
         filename,
-        saveAs: true
+        saveAs: false
       };
 
       await new Promise<void>((resolve, reject) => {

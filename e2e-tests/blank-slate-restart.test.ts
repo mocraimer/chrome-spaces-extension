@@ -62,7 +62,7 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     // Open popup and name the space
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup.waitForTimeout(2000);
+    await popup.waitForTimeout(5000);
 
     // Get the first space and name it
     const spaceItem = popup.locator('.space-item').first();
@@ -74,9 +74,10 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     await nameInput.waitFor({ state: 'visible' });
     await nameInput.fill('Work Project');
     await nameInput.press('Enter');
+    await expect(nameInput).not.toBeVisible({ timeout: 15000 });
 
     // Verify the name was set
-    await expect(popup.locator('h3:has-text("Work Project")')).toBeVisible();
+    await expect(popup.locator('.space-name:has-text("Work Project")')).toBeVisible();
     console.log('[Test] Space named successfully');
 
     // Force save state
@@ -111,12 +112,12 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     await newPopup.waitForTimeout(3000);
 
     // Verify "Work Project" name is preserved
-    const hasNamedSpace = await newPopup.locator('h3:has-text("Work Project")').isVisible();
+    const hasNamedSpace = await newPopup.locator('.space-name:has-text("Work Project")').isVisible();
     console.log('[Test] Named space preserved:', hasNamedSpace);
     
     if (!hasNamedSpace) {
       // Debug: what spaces do we have?
-      const spaceNames = await newPopup.locator('.space-item h3').allTextContents();
+      const spaceNames = await newPopup.locator('.space-item .space-name').allTextContents();
       console.log('[Test] Current space names:', spaceNames);
     }
 
@@ -158,6 +159,7 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
       await nameInput.waitFor({ state: 'visible' });
       await nameInput.fill(spaceNames[i]);
       await nameInput.press('Enter');
+      await expect(nameInput).not.toBeVisible();
 
       await popup.close();
       console.log(`[Test] Created and named space: ${spaceNames[i]}`);
@@ -195,7 +197,7 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
 
     let preservedCount = 0;
     for (const name of spaceNames) {
-      const isVisible = await newPopup.locator(`h3:has-text("${name}")`).isVisible();
+      const isVisible = await newPopup.locator(`.space-name:has-text("${name}")`).isVisible();
       if (isVisible) {
         preservedCount++;
         console.log(`[Test] ✅ Space "${name}" preserved`);
@@ -231,6 +233,7 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     const nameInput = spaceItem.locator('input.edit-input');
     await nameInput.fill('Archive Project');
     await nameInput.press('Enter');
+    await expect(nameInput).not.toBeVisible();
 
     await popup.waitForTimeout(1000);
 
@@ -241,7 +244,7 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     await popup.waitForTimeout(1000);
 
     // Verify it's in closed spaces
-    const closedSpaceVisible = await popup.locator('.closed-spaces h3:has-text("Archive Project")').isVisible();
+    const closedSpaceVisible = await popup.locator('.closed-spaces .space-name:has-text("Archive Project")').isVisible();
     console.log('[Test] Space moved to closed spaces:', closedSpaceVisible);
 
     // Force save
@@ -267,7 +270,7 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     await newPopup.goto(`chrome-extension://${extensionId}/popup.html`);
     await newPopup.waitForTimeout(3000);
 
-    const closedSpaceStillVisible = await newPopup.locator('.closed-spaces h3:has-text("Archive Project")').isVisible();
+    const closedSpaceStillVisible = await newPopup.locator('.closed-spaces .space-name:has-text("Archive Project")').isVisible();
     console.log('[Test] Closed space preserved after restart:', closedSpaceStillVisible);
 
     expect(closedSpaceStillVisible).toBe(true);
@@ -297,11 +300,12 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     const specialName = 'Dev 🚀 [Test] & <Work>';
     await nameInput.fill(specialName);
     await nameInput.press('Enter');
+    await expect(nameInput).not.toBeVisible();
 
     await popup.waitForTimeout(1000);
 
     // Verify special characters set correctly
-    const nameSet = await popup.locator(`h3:has-text("${specialName}")`).isVisible();
+    const nameSet = await popup.locator(`.space-name:has-text("${specialName}")`).isVisible();
     console.log('[Test] Special character name set:', nameSet);
 
     // Force save
@@ -328,11 +332,11 @@ test.describe('Blank Slate Chrome Restart - Space Name Preservation', () => {
     await newPopup.goto(`chrome-extension://${extensionId}/popup.html`);
     await newPopup.waitForTimeout(3000);
 
-    const specialCharsPreserved = await newPopup.locator(`h3:has-text("${specialName}")`).isVisible();
+    const specialCharsPreserved = await newPopup.locator(`.space-name:has-text("${specialName}")`).isVisible();
     console.log('[Test] Special characters preserved:', specialCharsPreserved);
 
     if (!specialCharsPreserved) {
-      const spaceNames = await newPopup.locator('.space-item h3').allTextContents();
+      const spaceNames = await newPopup.locator('.space-item .space-name').allTextContents();
       console.log('[Test] Current space names:', spaceNames);
     }
 

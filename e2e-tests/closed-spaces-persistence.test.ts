@@ -75,11 +75,11 @@ test.describe('Closed Spaces Persistence Test', () => {
     // ========== STEP 3: Verify closed spaces are in storage ==========
     console.log('[Test] Step 3: Verifying closed spaces in storage');
     const storageBeforeRestart = await popup2.evaluate(async () => {
-      const storage = await chrome.storage.local.get(null);
+      const response = await chrome.runtime.sendMessage({ action: 'spaces/fetchAll' });
       return {
-        closedSpacesCount: Object.keys(storage.chrome_spaces?.closedSpaces || {}).length,
-        closedSpaceIds: Object.keys(storage.chrome_spaces?.closedSpaces || {}),
-        storage: JSON.stringify(storage, null, 2).slice(0, 2000)
+        closedSpacesCount: Object.keys(response.closedSpaces || {}).length,
+        closedSpaceIds: Object.keys(response.closedSpaces || {}),
+        storage: JSON.stringify(response, null, 2).slice(0, 2000)
       };
     });
 
@@ -118,13 +118,14 @@ test.describe('Closed Spaces Persistence Test', () => {
     const popup3 = await context.newPage();
     await popup3.goto(`chrome-extension://${extensionId}/popup.html`);
     await popup3.waitForLoadState('domcontentloaded');
+    await popup3.waitForTimeout(2000);
 
     const storageAfterRestart = await popup3.evaluate(async () => {
-      const storage = await chrome.storage.local.get(null);
+      const response = await chrome.runtime.sendMessage({ action: 'spaces/fetchAll' });
       return {
-        closedSpacesCount: Object.keys(storage.chrome_spaces?.closedSpaces || {}).length,
-        closedSpaceIds: Object.keys(storage.chrome_spaces?.closedSpaces || {}),
-        storage: JSON.stringify(storage, null, 2).slice(0, 2000)
+        closedSpacesCount: Object.keys(response.closedSpaces || {}).length,
+        closedSpaceIds: Object.keys(response.closedSpaces || {}),
+        storage: JSON.stringify(response, null, 2).slice(0, 2000)
       };
     });
 

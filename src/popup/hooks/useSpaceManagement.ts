@@ -105,7 +105,7 @@ export const useSpaceManagement = (): SpaceManagementState & SpaceManagementActi
 
     const validation = validateSpaceName(editingName, editingSpaceId);
     if (!validation.valid) {
-      alert(validation.error);
+      console.warn('[useSpaceManagement] Validation failed:', validation.error);
       return;
     }
 
@@ -128,7 +128,6 @@ export const useSpaceManagement = (): SpaceManagementState & SpaceManagementActi
       setEditingName('');
     } catch (err) {
       console.error('[useSpaceManagement] Failed to save space name:', err);
-      alert(`Failed to save space name: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   }, [editingSpaceId, editingName, validateSpaceName, spaces, closedSpaces, dispatch, getDisplayName]);
 

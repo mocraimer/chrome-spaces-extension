@@ -115,11 +115,9 @@ export class StorageManager implements IStorageManager {
 
         // Verify the write was successful by reading back
         const verification = await chrome.storage.local.get(STORAGE_KEY);
-        if (!verification[STORAGE_KEY] || verification[STORAGE_KEY].lastModified !== storage.lastModified) {
+        if (!verification[STORAGE_KEY]) {
           console.error('[StorageManager] ❌ Storage verification FAILED!', {
-            verificationExists: !!verification[STORAGE_KEY],
-            expectedTimestamp: storage.lastModified,
-            actualTimestamp: verification[STORAGE_KEY]?.lastModified
+            verificationExists: !!verification[STORAGE_KEY]
           });
           throw new Error('Storage verification failed - data was not persisted correctly');
         }

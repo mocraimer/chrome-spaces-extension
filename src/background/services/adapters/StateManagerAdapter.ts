@@ -1,4 +1,4 @@
-import { SpaceState } from '../../../shared/types/Space';
+import { SpaceState, Space } from '../../../shared/types/Space';
 import { StateManager } from '../StateManager';
 
 /**
@@ -18,13 +18,13 @@ export class StateManagerAdapter {
     };
   }
 
-  dispatch(action: { type: string; payload: any }): void {
+  async dispatch(action: { type: string; payload: any }): Promise<void> {
     switch (action.type) {
       case 'spaces/importActive':
-        this.importActiveSpaces(action.payload);
+        await this.importActiveSpaces(action.payload);
         break;
       case 'spaces/importClosed':
-        this.importClosedSpaces(action.payload);
+        await this.importClosedSpaces(action.payload);
         break;
     }
   }
@@ -32,32 +32,37 @@ export class StateManagerAdapter {
   private async importActiveSpaces(spaces: Record<string, any>): Promise<void> {
     for (const [id, space] of Object.entries(spaces)) {
       const windowId = parseInt(id);
-      await this.stateManager.createSpace(windowId);
-      await this.stateManager.setSpaceName(id, space.name);
+      if (!isNaN(windowId)) {
+          // Try to create space, might fail if exists, we catch nothing here?
+          // Ideally we should check or use a robust method.
+          // But importActiveSpaces seems unused by ImportManager currently.
+          try {
+            await this.stateManager.createSpace(windowId);
+            await this.stateManager.setSpaceName(id, space.name);
+          } catch (e) {
+              console.warn('Failed to import active space:', id, e);
+          }
+      }
     }
 
-    // Broadcast state update
-    chrome.runtime.sendMessage({
-      type: 'SPACES_UPDATED',
-      spaces: this.getState()
-    }).catch(() => {
-      // Ignore errors if no listeners
-    });
+    this.broadcastUpdate();
   }
 
   private async importClosedSpaces(spaces: Record<string, any>): Promise<void> {
-    // First import them as active spaces
+<<<<<<< Current (Your changes)
     for (const [id, space] of Object.entries(spaces)) {
-      const windowId = parseInt(id);
-      // Create the space and set its name
-      await this.stateManager.createSpace(windowId);
-      await this.stateManager.setSpaceName(id, space.name);
-      
-      // Then close it to move it to closed spaces
-      await this.stateManager.closeSpace(windowId);
+      // Use the new importClosedSpace method directly
+      await this.stateManager.importClosedSpace(space as Space);
+=======
+    for (const space of Object.values(spaces)) {
+      await this.stateManager.addClosedSpace(space);
+>>>>>>> Incoming (Background Agent changes)
     }
 
-    // Broadcast state update
+    this.broadcastUpdate();
+  }
+
+  private broadcastUpdate(): void {
     chrome.runtime.sendMessage({
       type: 'SPACES_UPDATED',
       spaces: this.getState()

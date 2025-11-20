@@ -348,8 +348,24 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
         try {
           await nameInput.waitFor({ state: 'detached', timeout: 2000 });
         } catch (e) {
-          console.log('[Test] Input did not detach, pressing Enter again...');
-          await nameInput.press('Enter');
+          console.log('[Test] Input did not detach or error:', e instanceof Error ? e.message : String(e));
+          
+          if (popup.isClosed()) {
+             console.log('[Test] Popup closed. Reopening to check if save worked...');
+             popup = await openExtensionPopup();
+             // Fall through to verification
+          } else {
+             console.log('[Test] Input stuck? Pressing Enter again...');
+             try {
+               await nameInput.press('Enter');
+             } catch (pressError) {
+               console.log('[Test] Press failed:', pressError);
+               // If press failed (e.g. closed during press), check if closed
+               if (popup.isClosed()) {
+                  popup = await openExtensionPopup();
+               }
+             }
+          }
         }
 
         // Wait for save
@@ -365,7 +381,7 @@ test.describe('Space Rename -> Close -> Restore E2E Test', () => {
         }
         
         if (attempt === 4) throw e; // Changed to throw on last attempt
-
+      }
     }
     
     await popup.close();

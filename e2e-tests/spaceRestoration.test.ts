@@ -33,6 +33,11 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     if (!background) {
       background = await context.waitForEvent('serviceworker', { timeout: 60000 });
     }
+    
+    // Add SW logging
+    background.on('console', msg => console.log(`SW LOG: ${msg.text()}`));
+    background.on('error', err => console.log(`SW ERROR: ${err}`));
+    
     extensionId = background.url().split('/')[2];
   });
 
@@ -42,12 +47,17 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
 
   const openPopup = async (): Promise<Page> => {
     const page = await context.newPage();
+    
+    // Add console logging
+    page.on('console', msg => console.log(`PAGE LOG: ${msg.text()}`));
+    page.on('pageerror', exception => console.log(`PAGE ERROR: ${exception}`));
+    
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     await page.waitForLoadState('domcontentloaded');
     return page;
   };
 
-  test('should successfully restore a space with multiple tabs', async ({ context }) => {
+  test('should successfully restore a space with multiple tabs', async () => {
     const page = await openPopup();
     // Create a test space with multiple tabs
     const testSpace = createMockSpace('space-1', 'Multi-Tab Space', [
@@ -55,10 +65,25 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
       'https://github.com',
       'https://google.com'
     ]);
-    await setupExtensionState(page, { spaces: { 'space-1': testSpace } });
+    await setupExtensionState(page, { closedSpaces: { 'space-1': testSpace } });
+    await page.reload();
+
+    // Wait for spaces to load
+    await expect(page.locator('.loading')).not.toBeVisible();
+
+    if (await page.locator('[data-testid="closed-spaces-header"]').isVisible()) {
+        console.log('PAGE LOG: Closed spaces header visible');
+    } else {
+        console.log('PAGE LOG: Closed spaces header NOT visible');
+        // Dump page content for debugging
+        const content = await page.content();
+        console.log('PAGE LOG: Page content length:', content.length);
+    }
+    
+    await expect(page.locator('[data-testid="space-item-space-1"]')).toBeVisible();
 
     // Click restore button
-    await page.click('[data-testid="restore-space-1"]');
+    await page.click('[data-testid="space-item-space-1"]');
 
     // Wait for all tabs to be created
     const pages = context.pages();
@@ -71,7 +96,7 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     expect(urls).toContain('https://google.com');
   });
 
-  test('should handle concurrent space restorations', async ({ context }) => {
+  test('should handle concurrent space restorations', async () => {
     const page = await openPopup();
     // Create multiple test spaces
     const spaces = {
@@ -79,7 +104,8 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
       'space-2': createMockSpace('space-2', 'Space 2', ['https://example2.com']),
       'space-3': createMockSpace('space-3', 'Space 3', ['https://example3.com'])
     };
-    await setupExtensionState(page, { spaces });
+    await setupExtensionState(page, { closedSpaces: spaces });
+    await page.reload();
 
     // Trigger concurrent restorations
     await Promise.all([
@@ -99,14 +125,15 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     expect(urls).toContain('https://example3.com');
   });
 
-  test('should recover from network interruptions', async ({ context }) => {
+  test('should recover from network interruptions', async () => {
     const page = await openPopup();
     // Create a test space
     const testSpace = createMockSpace('space-1', 'Network Test Space', [
       'https://example.com',
       'https://github.com'
     ]);
-    await setupExtensionState(page, { spaces: { 'space-1': testSpace } });
+    await setupExtensionState(page, { closedSpaces: { 'space-1': testSpace } });
+    await page.reload();
 
     // Simulate offline condition
     await context.setOffline(true);
@@ -128,16 +155,17 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     expect(urls).toContain('https://github.com');
   });
 
-  test('should handle large space restoration efficiently', async ({ context }) => {
+  test('should handle large space restoration efficiently', async () => {
     const page = await openPopup();
     // Create a space with many tabs
     const urls = Array.from({ length: 50 }, (_, i) => `https://example.com/page${i}`);
     const largeSpace = createMockSpace('large-space', 'Large Space', urls);
-    await setupExtensionState(page, { spaces: { 'large-space': largeSpace } });
+    await setupExtensionState(page, { closedSpaces: { 'large-space': largeSpace } });
+    await page.reload();
 
     // Measure restoration time
     const startTime = Date.now();
-    await page.click('[data-testid="restore-large-space"]');
+    await page.click('[data-testid="space-item-large-space"]');
 
     // Wait for all tabs to be created
     const pages = context.pages();
@@ -156,14 +184,15 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     });
   });
 
-  test('should maintain state consistency during failed restoration', async ({ context }) => {
+  test('should maintain state consistency during failed restoration', async () => {
     const page = await openPopup();
     // Create a test space
     const testSpace = createMockSpace('space-1', 'Failed Space', [
       'invalid://url',
       'https://example.com'
     ]);
-    await setupExtensionState(page, { spaces: { 'space-1': testSpace } });
+    await setupExtensionState(page, { closedSpaces: { 'space-1': testSpace } });
+    await page.reload();
 
     // Attempt restoration
     await page.click('[data-testid="restore-space-1"]');
@@ -177,7 +206,7 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     expect(state.spaces['space-1'].name).toBe(testSpace.name);
   });
 
-  test('should properly clean up on partial failures', async ({ context }) => {
+  test('should properly clean up on partial failures', async () => {
     const page = await openPopup();
     // Create a space with a mix of valid and invalid URLs
     const testSpace = createMockSpace('space-1', 'Partial Failure Space', [
@@ -185,7 +214,8 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
       'invalid://url',
       'https://github.com'
     ]);
-    await setupExtensionState(page, { spaces: { 'space-1': testSpace } });
+    await setupExtensionState(page, { closedSpaces: { 'space-1': testSpace } });
+    await page.reload();
 
     // Attempt restoration
     await page.click('[data-testid="restore-space-1"]');
@@ -221,7 +251,7 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     await initialPages[1].goto('https://github.com');
     await initialPages[2].goto('https://stackoverflow.com');
 
-    await Promise.all(initialPages.map(page => page.waitForLoadState('networkidle')));
+    await Promise.all(initialPages.map(page => page.waitForLoadState('domcontentloaded')));
 
     // Get the original window ID through browser API
     const originalWindowId = await initialPages[0].evaluate(async () => {
@@ -255,21 +285,15 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     // Step 4: Restore the space and verify NEW window is created
     const restorePopup = await openPopup();
 
-    // Mock the closed space in storage
-    await restorePopup.evaluate(async (space) => {
-      await chrome.storage.local.set({
-        state: {
-          spaces: {},
-          closedSpaces: { 'new-window-test': space }
-        }
-      });
-    }, testSpace);
+    await setupExtensionState(restorePopup, {
+      closedSpaces: { 'new-window-test': testSpace }
+    });
+    await restorePopup.reload();
 
     // Find and click restore button
-    await restorePopup.reload();
     await restorePopup.waitForTimeout(2000);
 
-    const restoreButton = restorePopup.locator('[data-testid="restore-new-window-test"], button:has-text("Restore")').first();
+    const restoreButton = restorePopup.locator('[data-testid="space-item-new-window-test"], button:has-text("Restore")').first();
     if (await restoreButton.isVisible()) {
       await restoreButton.click();
     } else {

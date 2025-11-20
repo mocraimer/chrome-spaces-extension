@@ -80,6 +80,8 @@ export interface StateManager {
   forceSave(): Promise<void>;
   get_space_by_id_with_reload(spaceId: string): Promise<Space | null>;
   rekeySpace(oldSpaceId: string, newWindowId: number): Promise<void>;
+  addClosedSpace(space: Space): Promise<void>;
+  reloadSpaces(): Promise<void>;
 }
 
 export interface MessageHandler {

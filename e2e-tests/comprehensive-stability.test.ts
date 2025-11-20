@@ -82,7 +82,7 @@ test.describe('Chrome Spaces Comprehensive Stability Tests', () => {
 
     for (const url of urls) {
       const page = await ctx.newPage();
-      await page.goto(url, { waitUntil: 'networkidle' });
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
       pages.push(page);
     }
 
@@ -704,7 +704,6 @@ test.describe('Chrome Spaces Comprehensive Stability Tests', () => {
       await nameInput.waitFor({ state: 'visible', timeout: 5000 });
 
       // Clear and fill with test name
-      await nameInput.selectAll();
       await nameInput.fill(testName);
       await nameInput.press('Enter');
 
