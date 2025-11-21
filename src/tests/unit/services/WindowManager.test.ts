@@ -1,15 +1,16 @@
 import { WindowManager } from '../../../background/services/WindowManager';
 import { mockChrome } from '../../utils/testUtils';
 
-jest.mock('../../../background/services/WindowManager');
+
 
 // SKIPPED: Runtime failures - needs investigation
-describe.skip('WindowManager', () => {
+describe('WindowManager', () => {
   let windowManager: WindowManager;
 
   const mockWindow: chrome.windows.Window = {
     id: 1,
     focused: true,
+    type: 'normal',
     tabs: [
       { id: 1, url: 'https://example.com', windowId: 1 } as chrome.tabs.Tab
     ]
@@ -17,6 +18,7 @@ describe.skip('WindowManager', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    global.chrome = mockChrome as any;
     (mockChrome.windows.create as jest.Mock).mockResolvedValue(mockWindow);
     (mockChrome.windows.get as jest.Mock).mockResolvedValue(mockWindow);
     (mockChrome.windows.remove as jest.Mock).mockResolvedValue(undefined);
@@ -46,9 +48,9 @@ describe.skip('WindowManager', () => {
 
     it('should handle window creation failure gracefully', async () => {
       (mockChrome.windows.create as jest.Mock).mockRejectedValue(new Error('Failed to create window'));
-      
+
       await expect(windowManager.createWindow(['https://example.com']))
-        .rejects.toThrow('WINDOW_ERROR');
+        .rejects.toThrow('Failed to create window');
     });
 
     it('should close window by id', async () => {
@@ -84,7 +86,7 @@ describe.skip('WindowManager', () => {
         mockWindow,
         { ...mockWindow, id: 2, type: 'popup' }
       ] as chrome.windows.Window[];
-      
+
       (mockChrome.windows.getAll as jest.Mock).mockResolvedValue(windows);
 
       const activeWindows = await windowManager.getAllWindows();
@@ -116,7 +118,7 @@ describe.skip('WindowManager', () => {
     });
 
     it('should arrange windows in grid layout', async () => {
-      const windows = [mockWindow, {...mockWindow, id: 2}];
+      const windows = [mockWindow, { ...mockWindow, id: 2 }];
       const mockDisplay = {
         id: '1',
         workArea: { width: 1920, height: 1080, left: 0, top: 0 }

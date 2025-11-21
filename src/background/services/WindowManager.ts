@@ -59,7 +59,10 @@ export class WindowManager implements IWindowManager {
     }
 
     await executeChromeApi(
-      () => chrome.windows.update(windowId, updateOptions),
+      () => chrome.windows.update(windowId, {
+        focused: true,
+        state: 'normal' // Ensure window is visible
+      }),
       'WINDOW_ERROR'
     );
   }
@@ -82,10 +85,11 @@ export class WindowManager implements IWindowManager {
    * Get all windows with populated tabs
    */
   async getAllWindows(): Promise<chrome.windows.Window[]> {
-    return executeChromeApi(
+    const windows = await executeChromeApi(
       () => chrome.windows.getAll({ populate: true }),
       'WINDOW_ERROR'
     );
+    return windows.filter(w => w.type === 'normal');
   }
 
   /**
@@ -118,10 +122,10 @@ export class WindowManager implements IWindowManager {
     const windows = await this.getAllWindows();
     const displays = await chrome.system.display.getInfo();
     const { workArea } = displays[0];
-    
+
     const rows = Math.floor(Math.sqrt(windows.length));
     const cols = Math.ceil(windows.length / rows);
-    
+
     const width = Math.floor(workArea.width / cols);
     const height = Math.floor(workArea.height / rows);
 
@@ -129,7 +133,7 @@ export class WindowManager implements IWindowManager {
       windows.map((window, i) => {
         const row = Math.floor(i / cols);
         const col = i % cols;
-        
+
         const windowId = window.id;
         if (!windowId) {
           throw new Error(`Window ${i} has no ID`);

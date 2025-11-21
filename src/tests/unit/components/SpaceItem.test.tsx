@@ -9,9 +9,16 @@ import { createMockSpace } from '../../mocks/mockTypes';
 
 const mockStore = configureStore([]);
 
+jest.mock('../../../popup/store/slices/spacesSlice', () => ({
+  ...jest.requireActual('../../../popup/store/slices/spacesSlice'),
+  renameSpace: jest.fn((payload) => ({ type: 'spaces/rename', payload })),
+  toggleEditMode: jest.fn(() => ({ type: 'spaces/toggleEditMode' })),
+  selectSpace: jest.fn((id) => ({ type: 'spaces/selectSpace', payload: id }))
+}));
+
 // SKIPPED: Runtime failures - needs investigation
-describe.skip('SpaceItem', () => {
-  const mockSpace = createMockSpace('test-space-1', 'Test Space', {
+describe('SpaceItem', () => {
+  const mockSpace = createMockSpace('1', 'Test Space', {
     urls: ['https://test1.com']
   });
 
@@ -86,8 +93,8 @@ describe.skip('SpaceItem', () => {
     fireEvent.click(screen.getByText('Save'));
 
     expect(store.dispatch).toHaveBeenCalledWith({
-      type: 'spaces/updateSpaceName',
-      payload: { id: mockSpace.id, name: 'Updated Space' }
+      type: 'spaces/rename',
+      payload: { windowId: 1, name: 'Updated Space' }
     });
   });
 

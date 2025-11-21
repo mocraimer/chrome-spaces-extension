@@ -11,7 +11,9 @@
     "jsx": "react",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     },
     "types": [
       "node",
@@ -30,11 +32,6 @@
     "playwright.config.ts"
   ],
   "exclude": [
-    "src/tests/**/*",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "**/*.spec.ts",
-    "**/*.spec.tsx",
     "node_modules"
   ]
 }

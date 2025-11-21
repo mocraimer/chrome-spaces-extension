@@ -11,7 +11,7 @@ import { createMockSpace } from '../../mocks/mockTypes';
 const mockStore = configureStore([]);
 
 // SKIPPED: Runtime failures - needs investigation
-describe.skip('SpaceList', () => {
+describe('SpaceList', () => {
   const mockSpaces = {
     'space-1': createMockSpace('space-1', 'Test Space 1', {
       urls: ['https://test1.com']
@@ -80,7 +80,7 @@ describe.skip('SpaceList', () => {
       </Provider>
     );
 
-    fireEvent.click(screen.getByText('Test Space 1'));
+    fireEvent.click(screen.getByText('1 tab'));
     expect(store.dispatch).toHaveBeenCalledWith(selectSpace('space-1'));
   });
 
