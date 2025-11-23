@@ -260,6 +260,28 @@ export class IndexedDbStorageManager implements IStorageManager {
     await tx.store.put({ key, value: existing });
     await tx.done;
   }
+
+  async saveState(spaces: Record<string, Space>, closedSpaces: Record<string, Space>): Promise<void> {
+    const db = await getDb();
+    const tx = db.transaction(['spaces', 'closedSpaces', 'meta'], 'readwrite');
+
+    // Clear and update spaces
+    const spacesStore = tx.objectStore('spaces');
+    await spacesStore.clear();
+    for (const space of Object.values(spaces)) {
+      await spacesStore.put(space);
+    }
+
+    // Clear and update closed spaces
+    const closedSpacesStore = tx.objectStore('closedSpaces');
+    await closedSpacesStore.clear();
+    for (const space of Object.values(closedSpaces)) {
+      await closedSpacesStore.put(space);
+    }
+
+    await tx.objectStore('meta').put({ key: 'lastModified', value: Date.now() });
+    await tx.done;
+  }
 }
 
 

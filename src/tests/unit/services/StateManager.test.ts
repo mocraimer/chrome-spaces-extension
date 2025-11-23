@@ -61,9 +61,9 @@ describe('StateManager', () => {
     updateQueue.enqueue.mockResolvedValue();
     updateQueue.processQueue.mockResolvedValue();
 
-    broadcastService.broadcast.mockImplementation(() => {});
-    broadcastService.onStateUpdate.mockImplementation(() => {});
-    
+    broadcastService.broadcast.mockImplementation(() => { });
+    broadcastService.onStateUpdate.mockImplementation(() => { });
+
     stateManager = new StateManager(
       windowManager,
       tabManager,
@@ -479,9 +479,9 @@ describe('StateManager', () => {
       await stateManager.initialize();
       await stateManager.synchronizeWindowsAndSpaces();
 
-      expect(storageManager.saveSpaces).toHaveBeenCalledWith({});
-      expect(storageManager.saveClosedSpaces).toHaveBeenCalledWith(
-        expect.objectContaining({
+      expect(storageManager.saveState).toHaveBeenCalledWith(
+        {}, // spaces (empty)
+        expect.objectContaining({ // closedSpaces
           '2': expect.objectContaining({
             isActive: false,
             windowId: undefined,
@@ -504,17 +504,17 @@ describe('StateManager', () => {
       await stateManager.initialize();
       await stateManager.synchronizeWindowsAndSpaces();
 
-      expect(storageManager.saveSpaces).toHaveBeenCalledWith(
-        expect.objectContaining({
+      expect(storageManager.saveState).toHaveBeenCalledWith(
+        expect.objectContaining({ // spaces
           '1': expect.objectContaining({
             id: '1',
             sourceWindowId: '1',
             windowId: 1,
             isActive: true
           })
-        })
+        }),
+        {} // closedSpaces
       );
-      expect(storageManager.saveClosedSpaces).toHaveBeenCalledWith({});
     });
 
     it('reopens previously closed spaces when their window returns', async () => {
@@ -534,9 +534,9 @@ describe('StateManager', () => {
       // Current behavior: closed spaces are NOT automatically reopened when window ID matches
       // This prevents window ID reuse from incorrectly reactivating closed spaces
       // Closed spaces remain closed and a new space is created for the window
-      expect(storageManager.saveSpaces).toHaveBeenCalled();
-      expect(storageManager.saveClosedSpaces).toHaveBeenCalledWith(
-        expect.objectContaining({
+      expect(storageManager.saveState).toHaveBeenCalledWith(
+        expect.anything(), // spaces (new space created)
+        expect.objectContaining({ // closedSpaces
           '1': closedSpace // Closed space remains closed
         })
       );

@@ -57,6 +57,7 @@ const SpaceItem: React.FC<SpaceItemProps> = memo(({
   }, [space.isActive, space.windowId, space, onSwitch, onRestore]);
 
   const handleEditButtonClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     onEdit(space);
   }, [space, onEdit]);
