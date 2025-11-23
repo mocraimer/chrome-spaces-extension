@@ -91,7 +91,7 @@ test.describe('Context Switching Flow Journey', () => {
     const spaceItems = popupPage.locator('.active-spaces .space-item');
     const targetSpace = spaceItems.first(); // Assuming newest/current space
 
-    await targetSpace.dblclick();
+    await targetSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -134,7 +134,7 @@ test.describe('Context Switching Flow Journey', () => {
 
     // Find the email space (likely the newest)
     const emailSpace = spaceItems.last();
-    await emailSpace.dblclick();
+    await emailSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -225,7 +225,7 @@ test.describe('Context Switching Flow Journey', () => {
     const spaceItems = popupPage.locator('.active-spaces .space-item');
     const slackSpace = spaceItems.last();
 
-    await slackSpace.dblclick();
+    await slackSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();

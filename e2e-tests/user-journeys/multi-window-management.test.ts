@@ -99,7 +99,7 @@ test.describe('Multi-Window Management Journey', () => {
       console.log(`\n  ${i + 1}. "${name}"`);
 
       const space = spaceItems.nth(i);
-      await space.dblclick();
+      await space.click();
       await popupPage.waitForTimeout(500);
 
       const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();

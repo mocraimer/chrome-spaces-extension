@@ -156,7 +156,7 @@ test.describe('New User Onboarding Journey', () => {
     } else {
       // Alternative: User might need to double-click or press F2
       console.log('📝 User tries double-clicking to edit...');
-      await spaceItems.first().dblclick();
+      await spaceItems.first().click();
       await popupPage.waitForTimeout(500);
 
       const editInput = popupPage.locator('input[type="text"]:not(.search-input)');

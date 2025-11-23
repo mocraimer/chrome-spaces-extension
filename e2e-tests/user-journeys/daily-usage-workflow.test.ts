@@ -166,7 +166,7 @@ test.describe('Daily Usage Workflow Journey', () => {
     const targetSpace = spaceItems.last(); // Or first, depending on sort order
 
     // User double-clicks or presses edit to rename
-    await targetSpace.dblclick();
+    await targetSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();

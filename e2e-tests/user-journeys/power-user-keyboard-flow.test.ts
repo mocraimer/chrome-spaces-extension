@@ -139,7 +139,7 @@ test.describe('Power User Keyboard-Only Workflow', () => {
       const firstSpace = spaceItems.first();
 
       // Try double-click
-      await firstSpace.dblclick();
+      await firstSpace.click();
       await popupPage.waitForTimeout(500);
 
       editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -220,7 +220,7 @@ test.describe('Power User Keyboard-Only Workflow', () => {
 
     if (!(await editInput.isVisible())) {
       // Fallback
-      await spaceItems.first().dblclick();
+      await spaceItems.first().click();
       await popupPage.waitForTimeout(300);
       editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
     }

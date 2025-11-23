@@ -66,7 +66,7 @@ test.describe('Edit Workflow with Validation Journey', () => {
 
     // Test 1: Empty name
     console.log('\n📖 TEST 1: User tries to save empty name');
-    await targetSpace.dblclick();
+    await targetSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -99,7 +99,7 @@ test.describe('Edit Workflow with Validation Journey', () => {
 
     // Test 2: Whitespace-only name
     console.log('\n📖 TEST 2: User tries whitespace-only name');
-    await targetSpace.dblclick();
+    await targetSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput2 = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -138,7 +138,7 @@ test.describe('Edit Workflow with Validation Journey', () => {
 
     console.log('📖 User enters valid, descriptive name');
 
-    await targetSpace.dblclick();
+    await targetSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
@@ -186,7 +186,7 @@ test.describe('Edit Workflow with Validation Journey', () => {
 
     console.log('\n📖 User starts editing but changes mind');
 
-    await targetSpace.dblclick();
+    await targetSpace.click();
     await popupPage.waitForTimeout(500);
 
     const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();

@@ -114,7 +114,7 @@ test.describe('Bulk Operations Flow Journey', () => {
       console.log(`  ${i + 1}. Renaming to "${name}"...`);
 
       const space = spaceItems.nth(i);
-      await space.dblclick();
+      await space.click();
       await popupPage.waitForTimeout(400);
 
       const editInput = popupPage.locator('input[type="text"]:not(.search-input)').first();
