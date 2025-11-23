@@ -50,10 +50,41 @@ export class StorageManager implements IStorageManager {
     return 'space_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   }
 
+  // Mutex for serializing storage operations
+  private operationQueue: Promise<void> = Promise.resolve();
+
   /**
-   * Load the complete storage structure
+   * Enqueue an operation to be executed sequentially
    */
-  private async loadStorage(): Promise<ChromeSpacesStorage> {
+  private async enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operationQueue.then(() => operation());
+    this.operationQueue = result.then(() => { }, () => { }); // Catch errors to keep queue alive
+    return result;
+  }
+
+  /**
+   * Save both active and closed spaces atomically
+   */
+  async saveState(spaces: Record<string, Space>, closedSpaces: Record<string, Space>): Promise<void> {
+    return this.enqueueOperation(async () => {
+      console.log('[StorageManager] saveState() called - atomic save', {
+        activeCount: Object.keys(spaces).length,
+        closedCount: Object.keys(closedSpaces).length
+      });
+
+      const storage = await this.loadStorageInternal();
+      storage.spaces = spaces;
+      storage.closedSpaces = closedSpaces;
+      await this.saveStorageInternal(storage);
+
+      console.log('[StorageManager] saveState() completed successfully');
+    });
+  }
+
+  /**
+   * Load the complete storage structure (Internal use only - no mutex)
+   */
+  private async loadStorageInternal(): Promise<ChromeSpacesStorage> {
     return executeChromeApi(
       async () => {
         const data = await chrome.storage.local.get(STORAGE_KEY);
@@ -91,9 +122,9 @@ export class StorageManager implements IStorageManager {
   }
 
   /**
-   * Save the complete storage structure
+   * Save the complete storage structure (Internal use only - no mutex)
    */
-  private async saveStorage(storage: ChromeSpacesStorage): Promise<void> {
+  private async saveStorageInternal(storage: ChromeSpacesStorage): Promise<void> {
     await executeChromeApi(
       async () => {
         storage.lastModified = Date.now();
@@ -133,11 +164,11 @@ export class StorageManager implements IStorageManager {
    */
   private async migrateFromLegacyStorage(): Promise<ChromeSpacesStorage> {
     console.log('[StorageManager] Migrating from legacy storage format');
-    
+
     // Load legacy data
     const legacyKeys = ['spaceCustomNames', 'spacePermanentIds', 'closedSpaces'];
     const legacyData = await chrome.storage.local.get(legacyKeys);
-    
+
     const migrationData: MigrationData = {
       spaceCustomNames: legacyData.spaceCustomNames || {},
       spacePermanentIds: legacyData.spacePermanentIds || {},
@@ -178,7 +209,7 @@ export class StorageManager implements IStorageManager {
     }
 
     // Save new storage format
-    await this.saveStorage(newStorage);
+    await this.saveStorageInternal(newStorage);
 
     // Clean up legacy storage (optional, for now keep for safety)
     // await chrome.storage.local.remove(legacyKeys);
@@ -191,17 +222,19 @@ export class StorageManager implements IStorageManager {
    * Get or create permanent ID for a window
    */
   async getPermanentId(windowId: number): Promise<string> {
-    const storage = await this.loadStorage();
-    const windowIdStr = windowId.toString();
-    
-    let permanentId = storage.permanentIdMappings[windowIdStr];
-    if (!permanentId) {
-      permanentId = StorageManager.generatePermanentId();
-      storage.permanentIdMappings[windowIdStr] = permanentId;
-      await this.saveStorage(storage);
-    }
-    
-    return permanentId;
+    return this.enqueueOperation(async () => {
+      const storage = await this.loadStorageInternal();
+      const windowIdStr = windowId.toString();
+
+      let permanentId = storage.permanentIdMappings[windowIdStr];
+      if (!permanentId) {
+        permanentId = StorageManager.generatePermanentId();
+        storage.permanentIdMappings[windowIdStr] = permanentId;
+        await this.saveStorageInternal(storage);
+      }
+
+      return permanentId;
+    });
   }
 
   /**
@@ -209,62 +242,72 @@ export class StorageManager implements IStorageManager {
    * Used when re-keying spaces during restoration
    */
   async updatePermanentIdMapping(windowId: number, permanentId: string): Promise<void> {
-    const storage = await this.loadStorage();
-    const windowIdStr = windowId.toString();
-    storage.permanentIdMappings[windowIdStr] = permanentId;
-    await this.saveStorage(storage);
-    console.log(`[StorageManager] Updated permanent ID mapping: ${windowIdStr} → ${permanentId}`);
+    return this.enqueueOperation(async () => {
+      const storage = await this.loadStorageInternal();
+      const windowIdStr = windowId.toString();
+      storage.permanentIdMappings[windowIdStr] = permanentId;
+      await this.saveStorageInternal(storage);
+      console.log(`[StorageManager] Updated permanent ID mapping: ${windowIdStr} → ${permanentId}`);
+    });
   }
 
   /**
    * Save active spaces to storage
    */
   async saveSpaces(spaces: Record<string, Space>): Promise<void> {
-    console.log('[StorageManager] saveSpaces() called', {
-      count: Object.keys(spaces).length,
-      spaceIds: Object.keys(spaces),
-      customNames: Object.entries(spaces).map(([id, space]) => ({ id, name: space.name, named: space.named }))
+    return this.enqueueOperation(async () => {
+      console.log('[StorageManager] saveSpaces() called', {
+        count: Object.keys(spaces).length,
+        spaceIds: Object.keys(spaces),
+        customNames: Object.entries(spaces).map(([id, space]) => ({ id, name: space.name, named: space.named }))
+      });
+
+      const storage = await this.loadStorageInternal();
+      storage.spaces = spaces;
+      await this.saveStorageInternal(storage);
+
+      console.log('[StorageManager] saveSpaces() completed successfully');
     });
-
-    const storage = await this.loadStorage();
-    storage.spaces = spaces;
-    await this.saveStorage(storage);
-
-    console.log('[StorageManager] saveSpaces() completed successfully');
   }
 
   /**
    * Load active spaces from storage
    */
   async loadSpaces(): Promise<Record<string, Space>> {
-    const storage = await this.loadStorage();
-    return storage.spaces;
+    return this.enqueueOperation(async () => {
+      const storage = await this.loadStorageInternal();
+      return storage.spaces;
+    });
   }
 
   /**
    * Save closed spaces to storage
    */
   async saveClosedSpaces(spaces: Record<string, Space>): Promise<void> {
-    console.log('[StorageManager] saveClosedSpaces() called', {
-      count: Object.keys(spaces).length,
-      spaceIds: Object.keys(spaces),
-      customNames: Object.entries(spaces).map(([id, space]) => ({ id, name: space.name, named: space.named })),
-      fullData: spaces
+    return this.enqueueOperation(async () => {
+      console.log('[StorageManager] saveClosedSpaces() called', {
+        count: Object.keys(spaces).length,
+        spaceIds: Object.keys(spaces),
+        customNames: Object.entries(spaces).map(([id, space]) => ({ id, name: space.name, named: space.named })),
+        fullData: spaces
+      });
+
+      const storage = await this.loadStorageInternal();
+      storage.closedSpaces = spaces;
+      await this.saveStorageInternal(storage);
+
+      console.log('[StorageManager] saveClosedSpaces() completed successfully');
     });
-
-    const storage = await this.loadStorage();
-    storage.closedSpaces = spaces;
-    await this.saveStorage(storage);
-
-    console.log('[StorageManager] saveClosedSpaces() completed successfully');
   }
 
   /**
    * Load closed spaces from storage
    */
   async loadClosedSpaces(): Promise<Record<string, Space>> {
-    const storage = await this.loadStorage();
-    return storage.closedSpaces;
+    return this.enqueueOperation(async () => {
+      const storage = await this.loadStorageInternal();
+      return storage.closedSpaces;
+    });
   }
 
 
@@ -272,6 +315,7 @@ export class StorageManager implements IStorageManager {
    * Create a new space with all required fields
    */
   async createSpace(windowId: number, name: string, urls: string[], named: boolean = false): Promise<Space> {
+    // getPermanentId is already atomic
     const permanentId = await this.getPermanentId(windowId);
 
     const space: Space = {
@@ -296,44 +340,50 @@ export class StorageManager implements IStorageManager {
    * Clear all stored data
    */
   async clear(): Promise<void> {
-    await executeChromeApi(
-      async () => {
-        await chrome.storage.local.remove(STORAGE_KEY);
-      },
-      'STORAGE_ERROR'
-    );
+    return this.enqueueOperation(async () => {
+      await executeChromeApi(
+        async () => {
+          await chrome.storage.local.remove(STORAGE_KEY);
+        },
+        'STORAGE_ERROR'
+      );
+    });
   }
 
   /**
    * Export all spaces data
    */
   async exportData(): Promise<string> {
-    const data = await chrome.storage.local.get(STORAGE_KEY);
-    return JSON.stringify(data[STORAGE_KEY] || {}, null, 2);
+    return this.enqueueOperation(async () => {
+      const data = await chrome.storage.local.get(STORAGE_KEY);
+      return JSON.stringify(data[STORAGE_KEY] || {}, null, 2);
+    });
   }
 
   /**
    * Import spaces data from JSON
    */
   async importData(jsonData: string): Promise<void> {
-    try {
-      const data = JSON.parse(jsonData);
-      if (data.spaces) {
-        StorageManager.validateSpaces(data.spaces);
-      }
-      if (data.closedSpaces) {
-        StorageManager.validateSpaces(data.closedSpaces);
-      }
-
-      await chrome.storage.local.set({
-        [STORAGE_KEY]: {
-          ...data,
-          lastModified: Date.now()
+    return this.enqueueOperation(async () => {
+      try {
+        const data = JSON.parse(jsonData);
+        if (data.spaces) {
+          StorageManager.validateSpaces(data.spaces);
         }
-      });
-    } catch (error) {
-      throw new Error(`Invalid import data: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+        if (data.closedSpaces) {
+          StorageManager.validateSpaces(data.closedSpaces);
+        }
+
+        await chrome.storage.local.set({
+          [STORAGE_KEY]: {
+            ...data,
+            lastModified: Date.now()
+          }
+        });
+      } catch (error) {
+        throw new Error(`Invalid import data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
   }
 
   // Stub implementations for tab-related methods (legacy StorageManager doesn't support tabs)

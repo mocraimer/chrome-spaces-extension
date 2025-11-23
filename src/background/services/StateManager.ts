@@ -329,10 +329,7 @@ export class StateManager implements IStateManager {
         const updatedClosedSpaces = { ...this.closedSpaces };
         delete updatedClosedSpaces[spaceId];
 
-        await Promise.all([
-          this.storageManager.saveSpaces(updatedSpaces),
-          this.storageManager.saveClosedSpaces(updatedClosedSpaces)
-        ]);
+        await this.storageManager.saveState(updatedSpaces, updatedClosedSpaces);
 
         this.spaces = updatedSpaces;
         this.closedSpaces = updatedClosedSpaces;
@@ -467,10 +464,7 @@ export class StateManager implements IStateManager {
     console.log('[StateManager] Saving BOTH active and closed spaces to storage...');
     const saveStartTime = Date.now();
 
-    await Promise.all([
-      this.storageManager.saveSpaces(this.spaces),
-      this.storageManager.saveClosedSpaces(this.closedSpaces),
-    ]);
+    await this.storageManager.saveState(this.spaces, this.closedSpaces);
 
     const saveEndTime = Date.now();
     console.log('[StateManager] ✅ Saved spaces and closed spaces during shutdown', {
@@ -502,10 +496,7 @@ export class StateManager implements IStateManager {
   public async forceSave(): Promise<void> {
     console.log('[StateManager] forceSave called - saving all state immediately');
     try {
-      await Promise.all([
-        this.storageManager.saveSpaces(this.spaces),
-        this.storageManager.saveClosedSpaces(this.closedSpaces),
-      ]);
+      await this.storageManager.saveState(this.spaces, this.closedSpaces);
       console.log('[StateManager] Force save completed successfully');
     } catch (error) {
       console.error('[StateManager] Force save failed:', error);
@@ -717,10 +708,7 @@ export class StateManager implements IStateManager {
     this.spaces = updatedSpaces;
     this.closedSpaces = updatedClosedSpaces;
 
-    await Promise.all([
-      this.storageManager.saveSpaces(this.spaces),
-      this.storageManager.saveClosedSpaces(this.closedSpaces)
-    ]);
+    await this.storageManager.saveState(this.spaces, this.closedSpaces);
 
 
     // Queue the state update for broadcasting

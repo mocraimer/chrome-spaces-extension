@@ -37,6 +37,7 @@ export interface StorageManager {
   saveTabsForSpace(spaceId: string, kind: 'active' | 'closed', tabs: TabRecord[]): Promise<void>;
   deleteTabsForSpace(spaceId: string, kind: 'active' | 'closed'): Promise<void>;
   updatePermanentIdMapping(windowId: number, permanentId: string): Promise<void>;
+  saveState(spaces: Record<string, Space>, closedSpaces: Record<string, Space>): Promise<void>;
 }
 
 export interface TabManager {
