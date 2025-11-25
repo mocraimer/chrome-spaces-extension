@@ -2,7 +2,7 @@ import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store';
 import { updateGeneralSettings } from '../../store/slices/settingsSlice';
-import { SettingsContainer, SettingItem, SettingsHeading } from './GeneralSettings.styles';
+import { SettingsContainer, SettingItem, SettingsHeading, SettingsSection, ShortcutsButton } from './GeneralSettings.styles';
 
 const GeneralSettings: React.FC = () => {
   const dispatch = useDispatch();
@@ -10,6 +10,10 @@ const GeneralSettings: React.FC = () => {
 
   const handleToggleChange = (setting: keyof typeof generalSettings) => {
     dispatch(updateGeneralSettings({ [setting]: !generalSettings[setting] }));
+  };
+
+  const openShortcutsSettings = () => {
+    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   };
 
   return (
@@ -45,6 +49,14 @@ const GeneralSettings: React.FC = () => {
           Confirm before deleting spaces
         </label>
       </SettingItem>
+
+      <SettingsSection>
+        <SettingsHeading>Keyboard Shortcuts</SettingsHeading>
+        <p>Customize keyboard shortcuts for opening the popup and switching between spaces.</p>
+        <ShortcutsButton onClick={openShortcutsSettings}>
+          Customize Shortcuts
+        </ShortcutsButton>
+      </SettingsSection>
     </SettingsContainer>
   );
 };

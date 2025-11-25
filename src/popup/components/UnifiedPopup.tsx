@@ -36,7 +36,7 @@ const UnifiedPopup: React.FC = () => {
 
   // Custom hooks for functionality
   const spaceManagement = useSpaceManagement();
-  const spaceFiltering = useSpaceFiltering(spaces, closedSpaces, searchQuery);
+  const spaceFiltering = useSpaceFiltering(spaces, closedSpaces, searchQuery, currentWindowId);
 
   // Keyboard navigation hook
   const navigation = useUnifiedPopupNavigation({

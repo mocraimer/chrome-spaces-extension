@@ -11,7 +11,8 @@ export interface SpaceFilteringResult {
 export const useSpaceFiltering = (
   spaces: Record<string, Space>,
   closedSpaces: Record<string, Space>,
-  searchQuery: string
+  searchQuery: string,
+  currentWindowId: string | null
 ): SpaceFilteringResult => {
   // Get display name for a space
   const getDisplayName = useCallback((space: Space): string => {
@@ -43,19 +44,36 @@ export const useSpaceFiltering = (
     const closedSpacesArray = Object.values(closedSpaces).filter(space => !space.isActive);
 
     // Apply search filtering
-    const filteredSpaces = filterSpaces(activeSpacesArray, searchQuery);
+    const filteredActiveSpaces = filterSpaces(activeSpacesArray, searchQuery);
     const filteredClosedSpaces = filterSpaces(closedSpacesArray, searchQuery);
 
-    const totalFilteredCount = filteredSpaces.length + filteredClosedSpaces.length;
+    // Sort active spaces: current window first, then by lastModified descending
+    const sortedFilteredSpaces = [...filteredActiveSpaces].sort((a, b) => {
+      const aIsCurrent = a.windowId?.toString() === currentWindowId;
+      const bIsCurrent = b.windowId?.toString() === currentWindowId;
+
+      if (aIsCurrent && !bIsCurrent) return -1;
+      if (!aIsCurrent && bIsCurrent) return 1;
+
+      // Both not current - sort by lastModified descending
+      return b.lastModified - a.lastModified;
+    });
+
+    // Sort closed spaces by lastModified descending
+    const sortedClosedSpaces = [...filteredClosedSpaces].sort((a, b) =>
+      b.lastModified - a.lastModified
+    );
+
+    const totalFilteredCount = sortedFilteredSpaces.length + sortedClosedSpaces.length;
     const hasResults = totalFilteredCount > 0;
 
     return {
-      filteredSpaces,
-      filteredClosedSpaces,
+      filteredSpaces: sortedFilteredSpaces,
+      filteredClosedSpaces: sortedClosedSpaces,
       totalFilteredCount,
       hasResults
     };
-  }, [spaces, closedSpaces, searchQuery, filterSpaces]);
+  }, [spaces, closedSpaces, searchQuery, filterSpaces, currentWindowId]);
 
   return result;
 };
