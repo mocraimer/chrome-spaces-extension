@@ -13,6 +13,9 @@ import {
   debounce
 } from '../types';
 
+// Message timeout configuration (10 seconds allows for service worker initialization)
+const MESSAGE_TIMEOUT = 10000;
+
 // Initial state
 const initialState: SpacesState = {
   spaces: {},
@@ -72,10 +75,28 @@ export const clearError = createAction(CLEAR_ERROR);
 export const fetchSpaces = createAsyncAction(
   FETCH_SPACES,
   async () => {
-    const response = await chrome.runtime.sendMessage({
-      action: ActionTypes.GET_ALL_SPACES
-    });
-    return response as FetchSpacesResponse;
+    // Create a timeout promise that rejects after MESSAGE_TIMEOUT
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('Message timeout: background service did not respond within 10 seconds')),
+        MESSAGE_TIMEOUT
+      )
+    );
+
+    try {
+      // Race between the actual message and the timeout
+      const response = await Promise.race([
+        chrome.runtime.sendMessage({
+          action: ActionTypes.GET_ALL_SPACES
+        }),
+        timeoutPromise
+      ]);
+      return response as FetchSpacesResponse;
+    } catch (error) {
+      // Log the error for debugging
+      console.error('[fetchSpaces] Error fetching spaces:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 );
 

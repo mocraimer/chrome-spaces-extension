@@ -34,6 +34,9 @@ const UnifiedPopup: React.FC = () => {
     searchQuery
   } = useSelector((state: RootState) => state.spaces);
 
+  // State for auto-retry logic
+  const [retryInitiated, setRetryInitiated] = useState(false);
+
   // Custom hooks for functionality
   const spaceManagement = useSpaceManagement();
   const spaceFiltering = useSpaceFiltering(spaces, closedSpaces, searchQuery, currentWindowId);
@@ -88,6 +91,21 @@ const UnifiedPopup: React.FC = () => {
       searchInputRef.current.focus();
     }
   }, [isLoading]);
+
+  // Auto-retry on error (e.g., timeout during service worker wake-up)
+  // This handles the case where initialization takes longer than expected
+  useEffect(() => {
+    if (error && !retryInitiated) {
+      console.log('[UnifiedPopup] Auto-retrying fetch after error:', error);
+      const retryTimer = setTimeout(() => {
+        console.log('[UnifiedPopup] Executing auto-retry');
+        dispatch(fetchSpaces());
+        setRetryInitiated(true);
+      }, 3000);  // Wait 3 seconds before retrying
+
+      return () => clearTimeout(retryTimer);
+    }
+  }, [error, retryInitiated, dispatch]);
 
   // Handle search input
   const handleSearchChange = useCallback((query: string) => {

@@ -21,6 +21,7 @@ export class StateManager implements IStateManager {
   private spaces: Record<string, Space> = {};
   private closedSpaces: Record<string, Space> = {};
   private initialized = false;
+  private initializationPromise: Promise<void> | null = null;
   private updateLock = new Map<string, Promise<void>>();
   private lockResolvers = new Map<string, () => void>();
 
@@ -152,10 +153,25 @@ export class StateManager implements IStateManager {
   /**
    * Ensures the state manager is initialized before any operations
    * This is critical for service worker wake-up scenarios
+   * Uses a lock to prevent concurrent initialization attempts
    */
   async ensureInitialized(): Promise<void> {
-    if (!this.initialized) {
-      await this.initialize();
+    if (this.initialized) {
+      return;  // Already initialized
+    }
+
+    if (this.initializationPromise) {
+      // Another initialization in progress, wait for it to complete
+      await this.initializationPromise;
+      return;
+    }
+
+    // Only one initialization proceeds
+    this.initializationPromise = this.initialize();
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
     }
   }
 
