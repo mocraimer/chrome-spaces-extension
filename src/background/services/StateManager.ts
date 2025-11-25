@@ -562,6 +562,19 @@ export class StateManager implements IStateManager {
       closedSpaceIds: Object.keys(this.closedSpaces)
     });
 
+    // CRITICAL FIX: Service worker wake-up race condition
+    // If getAllWindows() returns empty but we have active spaces in memory,
+    // this is likely because the Chrome API hasn't fully initialized yet.
+    // Don't delete active spaces - it's transient and will be corrected on next sync.
+    const hasActiveSpaces = Object.keys(this.spaces).length > 0;
+    if (windows.length === 0 && hasActiveSpaces) {
+      console.warn('[StateManager] ⚠️  No windows available but we have active spaces - likely service worker initialization race', {
+        activeSpaceCount: Object.keys(this.spaces).length,
+        reason: 'Skipping sync to prevent clearing state during service worker wake'
+      });
+      return;
+    }
+
     // We will update this.spaces and this.closedSpaces in place (or by merging)
     // to avoid overwriting concurrent changes like renames.
 

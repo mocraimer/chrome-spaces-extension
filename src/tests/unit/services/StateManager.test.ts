@@ -475,15 +475,58 @@ describe('StateManager', () => {
         named: true
       });
 
-      windowManager.getAllWindows.mockResolvedValue([]);
+      // Simulate a realistic scenario: getAllWindows() returns a different window (not the orphaned space's)
+      // This ensures the API is working but the space's window is genuinely closed
+      const otherTab: chrome.tabs.Tab = {
+        id: 999,
+        index: 0,
+        windowId: 99,
+        highlighted: false,
+        active: true,
+        pinned: false,
+        incognito: false,
+        selected: false,
+        autoDiscardable: true,
+        discarded: false,
+        url: 'https://other.com',
+        title: 'Other Tab',
+        groupId: -1
+      };
+
+      const otherWindow: chrome.windows.Window = {
+        id: 99,
+        focused: true,
+        alwaysOnTop: false,
+        incognito: false,
+        type: 'normal',
+        tabs: [otherTab]
+      };
+
+      windowManager.getAllWindows.mockResolvedValue([otherWindow]);
+      tabManager.getTabs.mockImplementation((windowId: number) => {
+        return windowId === 99 ? Promise.resolve([otherTab]) : Promise.resolve([mockTab]);
+      });
+      tabManager.getTabUrl.mockImplementation((tab: chrome.tabs.Tab) => tab.url || 'https://example.com');
+
       storageManager.loadSpaces.mockResolvedValue({ '2': orphanedSpace });
       storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      // Mock createSpace to return a proper space
+      (storageManager as any).createSpace = jest.fn().mockResolvedValue(
+        createMockSpace('99', 'Untitled Space 99')
+      );
 
       await stateManager.initialize();
       await stateManager.synchronizeWindowsAndSpaces();
 
       expect(storageManager.saveState).toHaveBeenCalledWith(
-        {}, // spaces (empty)
+        expect.objectContaining({
+          // Window 99 becomes a new space
+          '99': expect.objectContaining({
+            isActive: true,
+            windowId: 99
+          })
+        }),
         expect.objectContaining({ // closedSpaces
           '2': expect.objectContaining({
             isActive: false,
@@ -492,6 +535,36 @@ describe('StateManager', () => {
           })
         })
       );
+    });
+
+    it('skips synchronization when getAllWindows returns empty but active spaces exist (service worker wake race)', async () => {
+      const activeSpace = createMockSpace('1', 'Active Space', {
+        isActive: true,
+        windowId: 1,
+        sourceWindowId: '1',
+        lastModified: Date.now(),
+        lastSync: Date.now(),
+        version: 2,
+        named: true
+      });
+
+      // getAllWindows() returns empty - simulates service worker initialization race
+      windowManager.getAllWindows.mockResolvedValue([]);
+      storageManager.loadSpaces.mockResolvedValue({ '1': activeSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      // Should NOT save state when windows list is empty but we have active spaces
+      // This prevents losing state during service worker wake
+      expect(storageManager.saveState).not.toHaveBeenCalled();
+
+      // Verify the space is still in memory and wasn't cleared
+      const spaces = stateManager.getAllSpaces();
+      expect(Object.keys(spaces)).toContain('1');
+      expect(spaces['1'].name).toBe('Active Space');
+      expect(spaces['1'].named).toBe(true);
     });
 
     it('creates new space entries for brand-new windows', async () => {
