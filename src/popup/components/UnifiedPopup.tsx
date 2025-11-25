@@ -72,6 +72,24 @@ const UnifiedPopup: React.FC = () => {
         // Fetch all spaces data from background service
         await dispatch(fetchSpaces());
         console.log('UnifiedPopup fetched spaces');
+
+        // CRITICAL FIX: Trigger a dummy action to force state synchronization
+        // This ensures that after service worker suspension, the popup properly
+        // refreshes state by triggering the window sync that creates new tabs and
+        // updates the active window list in the background service.
+        // Without this, the popup may show "no spaces" even though spaces exist.
+        try {
+          console.log('[UnifiedPopup] Triggering dummy tab creation to force state sync...');
+          await chrome.tabs.create({ windowId: currentWindow.id, url: 'about:blank' });
+          // Close the dummy tab immediately
+          const tabs = await chrome.tabs.query({ windowId: currentWindow.id, url: 'about:blank' });
+          if (tabs.length > 0 && tabs[0].id) {
+            await chrome.tabs.remove(tabs[0].id);
+          }
+          console.log('[UnifiedPopup] Dummy action completed - state should be synced');
+        } catch (err) {
+          console.warn('[UnifiedPopup] Dummy action failed (non-critical):', err);
+        }
       } catch (err) {
         console.error('Failed to initialize popup:', err);
       }
