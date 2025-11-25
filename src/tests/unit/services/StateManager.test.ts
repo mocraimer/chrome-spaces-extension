@@ -266,8 +266,9 @@ describe('StateManager', () => {
 
   describe('closeSpace', () => {
     beforeEach(async () => {
+      // Create a NAMED space for closeSpace tests (spaces should only be saved to closedSpaces if named)
       storageManager.loadSpaces.mockResolvedValue({
-        '1': createMockSpace('1', 'Test Space')
+        '1': createMockSpace('1', 'Test Space', { named: true })
       });
       await stateManager.initialize();
 
@@ -314,7 +315,8 @@ describe('StateManager', () => {
     it('should not duplicate closed spaces', async () => {
       const existingClosed = createMockSpace('existing-uuid', 'Existing Closed', {
         version: 2,
-        isActive: false
+        isActive: false,
+        named: true
       });
 
       storageManager.loadClosedSpaces.mockResolvedValue({
@@ -332,7 +334,7 @@ describe('StateManager', () => {
 
     it('should use space.urls fallback when getTabs returns empty', async () => {
       const testUrls = ['https://example.com/1', 'https://example.com/2', 'https://example.com/3'];
-      const spaceWithUrls = createMockSpace('1', 'Test Space', { urls: testUrls });
+      const spaceWithUrls = createMockSpace('1', 'Test Space', { urls: testUrls, named: true });
 
       storageManager.loadSpaces.mockResolvedValue({ '1': spaceWithUrls });
       (stateManager as any).initialized = false; // Reset to allow re-initialization
@@ -366,7 +368,7 @@ describe('StateManager', () => {
 
     it('should use space.urls fallback when getTabs throws error', async () => {
       const testUrls = ['https://example.com/1', 'https://example.com/2'];
-      const spaceWithUrls = createMockSpace('1', 'Test Space', { urls: testUrls });
+      const spaceWithUrls = createMockSpace('1', 'Test Space', { urls: testUrls, named: true });
 
       storageManager.loadSpaces.mockResolvedValue({ '1': spaceWithUrls });
       (stateManager as any).initialized = false; // Reset to allow re-initialization
@@ -395,7 +397,7 @@ describe('StateManager', () => {
 
     it('should prefer window tabs over space.urls when both available', async () => {
       const spaceUrls = ['https://space.com/1', 'https://space.com/2', 'https://space.com/3', 'https://space.com/4', 'https://space.com/5'];
-      const spaceWithUrls = createMockSpace('1', 'Test Space', { urls: spaceUrls });
+      const spaceWithUrls = createMockSpace('1', 'Test Space', { urls: spaceUrls, named: true });
 
       storageManager.loadSpaces.mockResolvedValue({ '1': spaceWithUrls });
       (stateManager as any).initialized = false; // Reset to allow re-initialization
@@ -469,7 +471,8 @@ describe('StateManager', () => {
         sourceWindowId: '2',
         lastModified: Date.now(),
         lastSync: Date.now(),
-        version: 3
+        version: 3,
+        named: true
       });
 
       windowManager.getAllWindows.mockResolvedValue([]);

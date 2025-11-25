@@ -660,16 +660,19 @@ export class StateManager implements IStateManager {
     for (const spaceId of activeSpaceIds) {
       if (!currentOpenSpaceIds.has(spaceId)) {
         const space = this.spaces[spaceId];
-        // Move to closed spaces
-        this.closedSpaces[spaceId] = {
-          ...space,
-          isActive: false,
-          windowId: undefined,
-          lastModified: now,
-          lastUsed: now,
-          lastSync: now,
-          version: space.version + 1
-        };
+        // Only save named spaces to closedSpaces. Unnamed spaces are discarded completely.
+        if (space.named) {
+          // Move to closed spaces
+          this.closedSpaces[spaceId] = {
+            ...space,
+            isActive: false,
+            windowId: undefined,
+            lastModified: now,
+            lastUsed: now,
+            lastSync: now,
+            version: space.version + 1
+          };
+        }
         delete this.spaces[spaceId];
       }
     }
@@ -868,6 +871,17 @@ export class StateManager implements IStateManager {
 
     if (!space) {
       console.log(`[StateManager] Space not found for windowId: ${windowId}, returning.`);
+      return;
+    }
+
+    // Only save named spaces to closedSpaces. Unnamed spaces are discarded completely.
+    if (!space.named) {
+      console.log(`[StateManager] Space is unnamed - discarding without saving to closedSpaces`);
+      delete this.spaces[activeSpaceId];
+      // Delete active tabs for this space
+      await (this.storageManager as any).deleteTabsForSpace(activeSpaceId, 'active');
+      // Save updated spaces (with unnamed space removed)
+      await this.storageManager.saveSpaces(this.spaces);
       return;
     }
 
