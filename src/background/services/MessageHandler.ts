@@ -49,6 +49,22 @@ export class MessageHandler implements IMessageHandler {
       return;
     }
 
+    if (request.type === 'SYNC_STATE') {
+      try {
+        console.log('[MessageHandler] Sync state requested from popup');
+        await this.stateManager.ensureInitialized();
+        await this.stateManager.synchronizeWindowsAndSpaces();
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[MessageHandler] Sync state failed:', error);
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+      return;
+    }
+
     if (!typeGuards.action(request.action)) {
       throw createError('Invalid message action', 'INVALID_STATE');
     }

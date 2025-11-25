@@ -73,22 +73,19 @@ const UnifiedPopup: React.FC = () => {
         await dispatch(fetchSpaces());
         console.log('UnifiedPopup fetched spaces');
 
-        // CRITICAL FIX: Trigger a dummy action to force state synchronization
-        // This ensures that after service worker suspension, the popup properly
-        // refreshes state by triggering the window sync that creates new tabs and
-        // updates the active window list in the background service.
-        // Without this, the popup may show "no spaces" even though spaces exist.
+        // CRITICAL FIX: Trigger background to synchronize state
+        // After service worker suspension, the Chrome API may not immediately reflect
+        // the current windows. Sending this message causes the background service to
+        // explicitly synchronize its state with the current windows, ensuring spaces
+        // are displayed correctly.
         try {
-          console.log('[UnifiedPopup] Triggering dummy tab creation to force state sync...');
-          await chrome.tabs.create({ windowId: currentWindow.id, url: 'about:blank' });
-          // Close the dummy tab immediately
-          const tabs = await chrome.tabs.query({ windowId: currentWindow.id, url: 'about:blank' });
-          if (tabs.length > 0 && tabs[0].id) {
-            await chrome.tabs.remove(tabs[0].id);
-          }
-          console.log('[UnifiedPopup] Dummy action completed - state should be synced');
+          console.log('[UnifiedPopup] Triggering background synchronization...');
+          chrome.runtime.sendMessage({ type: 'SYNC_STATE' }).catch(() => {
+            // Ignore errors - this is non-critical
+          });
+          console.log('[UnifiedPopup] Synchronization request sent');
         } catch (err) {
-          console.warn('[UnifiedPopup] Dummy action failed (non-critical):', err);
+          console.warn('[UnifiedPopup] Sync request failed (non-critical):', err);
         }
       } catch (err) {
         console.error('Failed to initialize popup:', err);
