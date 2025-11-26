@@ -529,14 +529,28 @@ export class StateManager implements IStateManager {
 
     // Get current window tabs
     const tabs = await this.tabManager.getTabs(window.id);
-    const currentUrls = tabs.map(tab => this.tabManager.getTabUrl(tab));
+    const rawUrls = tabs.map(tab => this.tabManager.getTabUrl(tab));
+    // Filter out empty strings (chrome:// tabs return empty strings)
+    const currentUrls = rawUrls.filter(url => url && url.length > 0);
+    const spaceUrls = (space.urls || []).filter(url => url && url.length > 0);
 
+    // ORPHAN FIX: If window has tabs but all are chrome:// pages (filtered out),
+    // and the space claims this window ID, trust the ID match.
+    // This handles new tab pages, settings pages, etc.
+    const hasTabsButOnlyChromeUrls = tabs.length > 0 && currentUrls.length === 0;
+    
     // If window has no tabs or space has no URLs, can't validate by URLs
-    if (currentUrls.length === 0 || !space.urls || space.urls.length === 0) {
+    if (currentUrls.length === 0 || spaceUrls.length === 0) {
       // CRITICAL FIX: If the space explicitly claims this window ID as its source,
       // and it has no URLs (e.g. new window created before tabs were ready),
       // we MUST trust the ID match to avoid discarding the space.
       if (space.sourceWindowId === window.id.toString()) {
+        return true;
+      }
+      // ORPHAN FIX: If window only has chrome:// tabs and space has no stored URLs,
+      // this is likely a newly created window that belongs to this space
+      if (hasTabsButOnlyChromeUrls && spaceUrls.length === 0) {
+        console.log(`[StateManager] Window ${window.id} has only chrome:// tabs and space has no URLs - assuming match`);
         return true;
       }
       return false;
@@ -544,8 +558,8 @@ export class StateManager implements IStateManager {
 
     // Simple validation: check if at least 50% of URLs match
     // This handles cases where some tabs might have changed
-    const matchingUrls = currentUrls.filter(url => space.urls.includes(url));
-    const matchPercentage = matchingUrls.length / Math.max(currentUrls.length, space.urls.length);
+    const matchingUrls = currentUrls.filter(url => spaceUrls.includes(url));
+    const matchPercentage = matchingUrls.length / Math.max(currentUrls.length, spaceUrls.length);
 
     return matchPercentage >= 0.5;
   }
@@ -555,6 +569,10 @@ export class StateManager implements IStateManager {
     const windows = await this.windowManager.getAllWindows();
     const now = Date.now();
     const openWindowIds = new Set<string>();
+
+    // ORPHAN FIX: Clean up stale restoration entries to prevent windows from being stuck
+    // in "restoring" state indefinitely (30 second timeout)
+    this.restoreRegistry.cleanupStale(30000);
 
     console.log('[StateManager] 🔄 synchronizeWindowsAndSpaces start', {
       windowCount: windows.length,
@@ -602,28 +620,35 @@ export class StateManager implements IStateManager {
 
       // Get the LATEST state of the space (directly from this.spaces/closedSpaces)
       // This is crucial to pick up any renames that happened since the function started
-      let existingSpace = this.spaces[spaceId] ?? this.closedSpaces[spaceId] ?? null;
+      let existingSpace: Space | null = this.spaces[spaceId] ?? this.closedSpaces[spaceId] ?? null;
+      let isRestored = false;
 
       if (existingSpace) {
         // CRITICAL FIX: Don't sync closed spaces with open windows if ID reused
+        // Instead of skipping, treat as a new window that needs its own space
         if (this.closedSpaces[existingSpace.id]) {
-          console.log(`[StateManager] Skipping closed space ${existingSpace.id} - window ID reused`);
-          continue;
+          console.log(`[StateManager] Closed space ${existingSpace.id} found with same ID - treating window ${window.id} as new`);
+          existingSpace = null; // Force creation of new space
         }
+      }
 
+      if (existingSpace) {
         // RESTORATION GATE: Skip validation for recently restored spaces
-        const isRestored = this.isRecentlyRestored(existingSpace.id);
+        isRestored = this.isRecentlyRestored(existingSpace.id);
         const isRecentlyModified = existingSpace.lastModified && (now - existingSpace.lastModified) < 30000;
         const shouldSkipValidation = isRestored || (existingSpace.named && isRecentlyModified);
 
         if (!shouldSkipValidation) {
           const isValidWindow = await this.validateWindowOwnership(existingSpace, window);
           if (!isValidWindow) {
-            console.log(`[StateManager] Window ${window.id} doesn't belong to space ${existingSpace.id} - window ID reused`);
-            continue;
+            console.log(`[StateManager] Window ${window.id} doesn't belong to space ${existingSpace.id} - treating as new window`);
+            // ORPHAN FIX: Instead of skipping, create a new space for this window
+            existingSpace = null; // Force creation of new space
           }
         }
+      }
 
+      if (existingSpace) {
         // Update existing space with current window state
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
@@ -659,14 +684,15 @@ export class StateManager implements IStateManager {
           this.clearRestorationGate(existingSpace.id);
         }
       } else {
-        // Create new space
+        // Create new space for this window
         const tabs = await this.tabManager.getTabs(window.id);
         const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
         const name = `${DEFAULT_SPACE_NAME} ${spaceId}`;
 
-        console.warn('[StateManager] ⚠️ Creating new space during sync', {
+        console.log('[StateManager] 🆕 Creating new space during sync for orphaned window', {
           windowId: window.id,
-          derivedSpaceId: spaceId
+          derivedSpaceId: spaceId,
+          urlCount: urls.length
         });
 
         const space = await (this.storageManager as any).createSpace(window.id, name, urls);

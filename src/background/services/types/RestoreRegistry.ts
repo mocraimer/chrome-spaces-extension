@@ -148,4 +148,40 @@ export class RestoreRegistry {
   listActive(): RestoreSnapshot[] {
     return Array.from(this.bySpaceId.values());
   }
+
+  /**
+   * Clean up stale restoration entries that have been pending/attached too long.
+   * This prevents windows from being stuck in "restoring" state indefinitely.
+   * @param maxAgeMs Maximum age in milliseconds before an entry is considered stale (default: 30 seconds)
+   */
+  cleanupStale(maxAgeMs: number = 30000): number {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [closedSpaceId, snapshot] of this.bySpaceId.entries()) {
+      const age = now - snapshot.requestedAt;
+      if (age > maxAgeMs) {
+        console.warn('[RestoreRegistry] Cleaning up stale restoration entry', {
+          closedSpaceId,
+          windowId: snapshot.windowId,
+          status: snapshot.status,
+          ageMs: age
+        });
+
+        // Clean up all references
+        if (snapshot.windowId !== undefined) {
+          this.byWindowId.delete(snapshot.windowId);
+        }
+        this.bySpaceId.delete(closedSpaceId);
+        this.pendingQueue = this.pendingQueue.filter(id => id !== closedSpaceId);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`[RestoreRegistry] Cleaned up ${cleanedCount} stale restoration entries`);
+    }
+
+    return cleanedCount;
+  }
 }
