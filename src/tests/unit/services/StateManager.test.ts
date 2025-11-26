@@ -617,6 +617,88 @@ describe('StateManager', () => {
         })
       );
     });
+
+    it('preserves named spaces when validation fails due to URL mismatch', async () => {
+      // Named space "My Work" exists for window ID 1
+      const namedSpace = createMockSpace('1', 'My Work', {
+        isActive: true,
+        windowId: 1,
+        sourceWindowId: '1',
+        lastModified: Date.now() - 60000, // Modified more than 30s ago (not recently modified)
+        lastSync: Date.now() - 60000,
+        version: 5,
+        named: true, // This is a named space!
+        urls: ['https://mywork.com', 'https://mywork.com/dashboard']
+      });
+
+      // Window 1 now has completely different URLs (validation will fail)
+      const differentTab: chrome.tabs.Tab = {
+        id: 100,
+        index: 0,
+        windowId: 1,
+        highlighted: false,
+        active: true,
+        pinned: false,
+        incognito: false,
+        selected: false,
+        autoDiscardable: true,
+        discarded: false,
+        url: 'https://completely-different.com',
+        title: 'Different Site',
+        groupId: -1
+      };
+
+      const windowWithDifferentContent: chrome.windows.Window = {
+        id: 1,
+        focused: true,
+        alwaysOnTop: false,
+        incognito: false,
+        type: 'normal',
+        tabs: [differentTab]
+      };
+
+      windowManager.getAllWindows.mockResolvedValue([windowWithDifferentContent]);
+      tabManager.getTabs.mockResolvedValue([differentTab]);
+      tabManager.getTabUrl.mockReturnValue('https://completely-different.com');
+
+      storageManager.loadSpaces.mockResolvedValue({ '1': namedSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      // Mock createSpace for new space creation
+      (storageManager as any).createSpace = jest.fn().mockResolvedValue(
+        createMockSpace('1', 'Untitled Space 1', { named: false })
+      );
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      // The named space "My Work" should be PRESERVED in closedSpaces (not lost!)
+      // A new unnamed space should be created for the window
+      expect(storageManager.saveState).toHaveBeenCalled();
+      
+      const saveStateCall = (storageManager.saveState as jest.Mock).mock.calls[0];
+      const savedSpaces = saveStateCall[0];
+      const savedClosedSpaces = saveStateCall[1];
+      
+      // Verify new unnamed space was created for window 1
+      expect(savedSpaces['1']).toMatchObject({
+        isActive: true,
+        windowId: 1,
+        named: false // New unnamed space for the window
+      });
+      
+      // Verify the named space "My Work" was preserved in closedSpaces
+      const preservedSpaceKeys = Object.keys(savedClosedSpaces).filter(key => key.startsWith('preserved-space-'));
+      expect(preservedSpaceKeys.length).toBe(1);
+      
+      const preservedSpace = savedClosedSpaces[preservedSpaceKeys[0]];
+      expect(preservedSpace).toMatchObject({
+        name: 'My Work',
+        named: true,
+        isActive: false,
+        windowId: undefined
+      });
+    });
   });
 
   describe('restoreSpace', () => {

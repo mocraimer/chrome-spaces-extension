@@ -628,6 +628,8 @@ export class StateManager implements IStateManager {
         // Instead of skipping, treat as a new window that needs its own space
         if (this.closedSpaces[existingSpace.id]) {
           console.log(`[StateManager] Closed space ${existingSpace.id} found with same ID - treating window ${window.id} as new`);
+          // Note: The closed space is already in closedSpaces, so it's preserved.
+          // Just create a new space for this window.
           existingSpace = null; // Force creation of new space
         }
       }
@@ -642,7 +644,28 @@ export class StateManager implements IStateManager {
           const isValidWindow = await this.validateWindowOwnership(existingSpace, window);
           if (!isValidWindow) {
             console.log(`[StateManager] Window ${window.id} doesn't belong to space ${existingSpace.id} - treating as new window`);
-            // ORPHAN FIX: Instead of skipping, create a new space for this window
+            
+            // CRITICAL: If the existing space is NAMED, preserve it in closedSpaces before overwriting
+            // This prevents losing user-named spaces when window IDs get reused
+            if (existingSpace.named) {
+              const preservedSpaceId = generateUUID('preserved-space');
+              console.log(`[StateManager] 💾 Preserving named space "${existingSpace.name}" (${existingSpace.id}) to closedSpaces as ${preservedSpaceId}`);
+              
+              this.closedSpaces[preservedSpaceId] = {
+                ...existingSpace,
+                id: preservedSpaceId,
+                windowId: undefined,
+                isActive: false,
+                lastModified: now,
+                lastUsed: now,
+                version: existingSpace.version + 1
+              };
+              
+              // Remove from active spaces since we're preserving it
+              delete this.spaces[spaceId];
+            }
+            
+            // ORPHAN FIX: Create a new space for this window
             existingSpace = null; // Force creation of new space
           }
         }
