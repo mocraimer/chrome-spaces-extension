@@ -123,10 +123,16 @@ export class MessageHandler implements IMessageHandler {
 
     const currentWindow = await this.windowManager.getCurrentWindow();
     const currentWindowId = currentWindow?.id;
+    
+    // Check if current window has a space using the new lookup
+    const hasCurrentWindowSpace = currentWindowId 
+      ? this.stateManager.getSpaceByWindowId(currentWindowId) !== null
+      : false;
+    
     const spaces = this.stateManager.getAllSpaces();
     const needsSync =
       !currentWindowId ||
-      !spaces[currentWindowId.toString()] ||
+      !hasCurrentWindowSpace ||
       Object.keys(spaces).length === 0;
 
     if (needsSync) {
@@ -244,8 +250,11 @@ export class MessageHandler implements IMessageHandler {
     const windowId = currentWindow?.id;
     if (windowId === undefined) return;
 
-    const currentSpaceId = windowId.toString();
-    const currentIndex = spaces.findIndex(space => space.id === currentSpaceId);
+    // Find current space by windowId
+    const currentSpace = this.stateManager.getSpaceByWindowId(windowId);
+    if (!currentSpace) return;
+    
+    const currentIndex = spaces.findIndex(space => space.permanentId === currentSpace.permanentId);
     if (currentIndex === -1) return;
 
     const nextIndex =
@@ -254,7 +263,10 @@ export class MessageHandler implements IMessageHandler {
         : (currentIndex - 1 + spaces.length) % spaces.length;
 
     const targetSpace = spaces[nextIndex];
-    await this.windowManager.switchToWindow(parseInt(targetSpace.id, 10));
+    // Use windowId to switch to the target space
+    if (targetSpace.windowId) {
+      await this.windowManager.switchToWindow(targetSpace.windowId);
+    }
 
     this.broadcastMessage({
       type: MessageTypes.SPACES_UPDATED,

@@ -18,15 +18,20 @@ export interface StateCache {
 }
 
 export class StateManager implements IStateManager {
+  // Spaces keyed by permanentId (stable across restarts)
   private spaces: Record<string, Space> = {};
   private closedSpaces: Record<string, Space> = {};
+  
+  // Fast lookup: windowId -> permanentId (rebuilt on sync)
+  private windowToSpaceMap = new Map<number, string>();
+  
   private initialized = false;
   private initializationPromise: Promise<void> | null = null;
   private updateLock = new Map<string, Promise<void>>();
   private lockResolvers = new Map<string, () => void>();
 
   // Track spaces that were recently restored and need protection from validation
-  // Map: spaceId -> { windowId, restoredAt, originalName }
+  // Map: permanentId -> { windowId, restoredAt, originalName }
   private recentlyRestoredSpaces = new Map<string, { windowId: number; restoredAt: number; originalName: string }>();
 
   // Cache configuration
@@ -37,7 +42,7 @@ export class StateManager implements IStateManager {
 
   // Debounced broadcast configuration
   private broadcastDebounceTime = 100; // ms
-  private broadcastTimeoutId: NodeJS.Timeout | null = null;
+  private broadcastTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private pendingBroadcastData: any = null;
   private lastBroadcastTime = 0;
   private broadcastQueue: Array<{ timestamp: number; data: any }> = [];
@@ -98,6 +103,67 @@ export class StateManager implements IStateManager {
     this.stateCache.delete(key);
   }
 
+  // ============================================================================
+  // PERMANENT ID ARCHITECTURE HELPERS
+  // ============================================================================
+
+  /**
+   * Get space by window ID using the mapping
+   */
+  getSpaceByWindowId(windowId: number): Space | null {
+    const permanentId = this.windowToSpaceMap.get(windowId);
+    if (!permanentId) return null;
+    return this.spaces[permanentId] || null;
+  }
+
+  /**
+   * Get space by permanent ID (direct lookup)
+   */
+  getSpaceByPermanentId(permanentId: string): Space | null {
+    return this.spaces[permanentId] || this.closedSpaces[permanentId] || null;
+  }
+
+  /**
+   * Associate a window with a space
+   */
+  private associateWindowWithSpace(windowId: number, permanentId: string): void {
+    // Remove any existing association for this window
+    this.windowToSpaceMap.set(windowId, permanentId);
+    
+    // Update the space's windowId
+    if (this.spaces[permanentId]) {
+      this.spaces[permanentId].windowId = windowId;
+      this.spaces[permanentId].isActive = true;
+    }
+  }
+
+  /**
+   * Disassociate a window from its space
+   */
+  private disassociateWindow(windowId: number): void {
+    const permanentId = this.windowToSpaceMap.get(windowId);
+    if (permanentId && this.spaces[permanentId]) {
+      this.spaces[permanentId].windowId = undefined;
+      this.spaces[permanentId].isActive = false;
+    }
+    this.windowToSpaceMap.delete(windowId);
+  }
+
+  /**
+   * Rebuild the window-to-space mapping from current spaces
+   */
+  private rebuildWindowMapping(): void {
+    this.windowToSpaceMap.clear();
+    for (const [permanentId, space] of Object.entries(this.spaces)) {
+      if (space.windowId !== undefined) {
+        this.windowToSpaceMap.set(space.windowId, permanentId);
+      }
+    }
+    console.log(`[StateManager] 🗺️ Rebuilt window mapping: ${this.windowToSpaceMap.size} active windows`);
+  }
+
+  // ============================================================================
+
   @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   async initialize(): Promise<void> {
     console.log('[StateManager] ========== INITIALIZATION START ==========');
@@ -138,6 +204,9 @@ export class StateManager implements IStateManager {
 
     // Update in-memory state
     this.spaces = updatedSpaces;
+
+    // Clear the window mapping on startup (will be rebuilt during sync)
+    this.windowToSpaceMap.clear();
 
     // Save the reset state to storage immediately
     if (Object.keys(updatedSpaces).length > 0) {
@@ -568,190 +637,172 @@ export class StateManager implements IStateManager {
   async synchronizeWindowsAndSpaces(): Promise<void> {
     const windows = await this.windowManager.getAllWindows();
     const now = Date.now();
-    const openWindowIds = new Set<string>();
 
-    // ORPHAN FIX: Clean up stale restoration entries to prevent windows from being stuck
-    // in "restoring" state indefinitely (30 second timeout)
+    // ORPHAN FIX: Clean up stale restoration entries
     this.restoreRegistry.cleanupStale(30000);
 
     console.log('[StateManager] 🔄 synchronizeWindowsAndSpaces start', {
       windowCount: windows.length,
-      activeSpaceIds: Object.keys(this.spaces),
-      closedSpaceIds: Object.keys(this.closedSpaces)
+      activeSpaceCount: Object.keys(this.spaces).length,
+      closedSpaceCount: Object.keys(this.closedSpaces).length,
+      windowMappingSize: this.windowToSpaceMap.size
     });
 
     // CRITICAL FIX: Service worker wake-up race condition
-    // If getAllWindows() returns empty but we have active spaces in memory,
-    // this is likely because the Chrome API hasn't fully initialized yet.
-    // Don't delete active spaces - it's transient and will be corrected on next sync.
     const hasActiveSpaces = Object.keys(this.spaces).length > 0;
     if (windows.length === 0 && hasActiveSpaces) {
-      console.warn('[StateManager] ⚠️  No windows available but we have active spaces - likely service worker initialization race', {
-        activeSpaceCount: Object.keys(this.spaces).length,
-        reason: 'Skipping sync to prevent clearing state during service worker wake'
-      });
+      console.warn('[StateManager] ⚠️ No windows available but we have active spaces - skipping sync');
       return;
     }
 
-    // We will update this.spaces and this.closedSpaces in place (or by merging)
-    // to avoid overwriting concurrent changes like renames.
+    // Track which permanentIds are currently active (have open windows)
+    const activePermIds = new Set<string>();
+    
+    // Clear old window mapping - we'll rebuild it
+    this.windowToSpaceMap.clear();
 
-    // Track which spaces are currently open so we can identify closed ones later
-    const currentOpenSpaceIds = new Set<string>();
+    // =========================================================================
+    // PHASE 1: Match windows to existing spaces
+    // =========================================================================
+    
+    // First pass: collect all unmatched spaces for URL-based matching
+    const unmatchedSpaces = new Map<string, Space>();
+    for (const [permId, space] of Object.entries(this.spaces)) {
+      unmatchedSpaces.set(permId, space);
+    }
 
-    // Reconcile currently open windows with stored spaces
     for (const window of windows) {
       if (!window.id) continue;
 
-      console.log('[StateManager] 🔍 Inspecting window during sync', {
-        windowId: window.id,
-        isMarkedRestoring: this.restoreRegistry.isWindowRestoring(window.id)
-      });
-
-      // Skip windows that are currently being restored
+      // Skip windows being restored
       if (this.restoreRegistry.isWindowRestoring(window.id)) {
-        console.log(`[StateManager] Skipping window ${window.id} during sync - restoration in progress`);
-        currentOpenSpaceIds.add(window.id.toString());
+        console.log(`[StateManager] Skipping window ${window.id} - restoration in progress`);
+        const snapshot = this.restoreRegistry.getByWindowId(window.id);
+        if (snapshot?.permanentId) {
+          activePermIds.add(snapshot.permanentId);
+        }
         continue;
       }
 
-      const spaceId = window.id.toString();
-      currentOpenSpaceIds.add(spaceId);
+      // Get window's current tabs for matching
+      const tabs = await this.tabManager.getTabs(window.id);
+      const windowUrls = tabs.map(tab => this.tabManager.getTabUrl(tab)).filter(url => url && url.length > 0);
 
-      // Get the LATEST state of the space (directly from this.spaces/closedSpaces)
-      // This is crucial to pick up any renames that happened since the function started
-      let existingSpace: Space | null = this.spaces[spaceId] ?? this.closedSpaces[spaceId] ?? null;
-      let isRestored = false;
+      let matchedSpace: Space | null = null;
+      let matchSource = '';
 
-      if (existingSpace) {
-        // CRITICAL FIX: Don't sync closed spaces with open windows if ID reused
-        // Instead of skipping, treat as a new window that needs its own space
-        if (this.closedSpaces[existingSpace.id]) {
-          console.log(`[StateManager] Closed space ${existingSpace.id} found with same ID - treating window ${window.id} as new`);
-          // Note: The closed space is already in closedSpaces, so it's preserved.
-          // Just create a new space for this window.
-          existingSpace = null; // Force creation of new space
+      // Strategy 1: Check if any space already claims this windowId
+      for (const [permId, space] of unmatchedSpaces) {
+        if (space.windowId === window.id) {
+          matchedSpace = space;
+          matchSource = 'windowId';
+          unmatchedSpaces.delete(permId);
+          break;
         }
       }
 
-      if (existingSpace) {
-        // RESTORATION GATE: Skip validation for recently restored spaces
-        isRestored = this.isRecentlyRestored(existingSpace.id);
-        const isRecentlyModified = existingSpace.lastModified && (now - existingSpace.lastModified) < 30000;
-        const shouldSkipValidation = isRestored || (existingSpace.named && isRecentlyModified);
-
-        if (!shouldSkipValidation) {
-          const isValidWindow = await this.validateWindowOwnership(existingSpace, window);
-          if (!isValidWindow) {
-            console.log(`[StateManager] Window ${window.id} doesn't belong to space ${existingSpace.id} - treating as new window`);
-            
-            // CRITICAL: If the existing space is NAMED, preserve it in closedSpaces before overwriting
-            // This prevents losing user-named spaces when window IDs get reused
-            if (existingSpace.named) {
-              const preservedSpaceId = generateUUID('preserved-space');
-              console.log(`[StateManager] 💾 Preserving named space "${existingSpace.name}" (${existingSpace.id}) to closedSpaces as ${preservedSpaceId}`);
-              
-              this.closedSpaces[preservedSpaceId] = {
-                ...existingSpace,
-                id: preservedSpaceId,
-                windowId: undefined,
-                isActive: false,
-                lastModified: now,
-                lastUsed: now,
-                version: existingSpace.version + 1
-              };
-              
-              // Remove from active spaces since we're preserving it
-              delete this.spaces[spaceId];
-            }
-            
-            // ORPHAN FIX: Create a new space for this window
-            existingSpace = null; // Force creation of new space
+      // Strategy 2: URL-based matching (for stale spaces after restart)
+      if (!matchedSpace && windowUrls.length > 0) {
+        let bestMatch: { permId: string; space: Space; score: number } | null = null;
+        
+        for (const [permId, space] of unmatchedSpaces) {
+          const spaceUrls = (space.urls || []).filter(url => url && url.length > 0);
+          if (spaceUrls.length === 0) continue;
+          
+          const matchingUrls = windowUrls.filter(url => spaceUrls.includes(url));
+          const score = matchingUrls.length / Math.max(windowUrls.length, spaceUrls.length);
+          
+          // Use lower threshold (0.3) for named spaces, higher (0.5) for unnamed
+          const threshold = space.named ? 0.3 : 0.5;
+          if (score >= threshold && (!bestMatch || score > bestMatch.score)) {
+            bestMatch = { permId, space, score };
           }
         }
+        
+        if (bestMatch) {
+          matchedSpace = bestMatch.space;
+          matchSource = `URL (${(bestMatch.score * 100).toFixed(0)}%)`;
+          unmatchedSpaces.delete(bestMatch.permId);
+        }
       }
 
-      if (existingSpace) {
+      if (matchedSpace) {
         // Update existing space with current window state
-        const tabs = await this.tabManager.getTabs(window.id);
-        const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
-
-        // CRITICAL: Re-fetch the space from this.spaces right before updating
-        // to ensure we have the absolute latest version (including any concurrent renames)
-        const latestSpace = this.spaces[spaceId] ?? existingSpace;
+        console.log(`[StateManager] 🔗 Window ${window.id} matched to space "${matchedSpace.name}" via ${matchSource}`);
+        
+        const permId = matchedSpace.permanentId;
+        activePermIds.add(permId);
+        this.windowToSpaceMap.set(window.id, permId);
 
         const updatedSpace: Space = {
-          ...latestSpace,
-          urls,
+          ...matchedSpace,
+          id: permId, // Use permanentId as id
+          urls: windowUrls.length > 0 ? windowUrls : matchedSpace.urls,
           windowId: window.id,
           isActive: true,
-          sourceWindowId: spaceId,
-          lastModified: Date.now(),
-          lastSync: Date.now(),
-          version: latestSpace.version + 1,
-          // Explicitly preserve name and named status from the latest state
-          name: latestSpace.name,
-          named: latestSpace.named
+          lastModified: now,
+          lastSync: now,
+          version: matchedSpace.version + 1
         };
 
-        // Update in place
-        this.spaces[spaceId] = updatedSpace;
+        this.spaces[permId] = updatedSpace;
 
-        // If it was in closedSpaces, remove it
-        if (this.closedSpaces[spaceId]) {
-          delete this.closedSpaces[spaceId];
-        }
+        // Remove from closedSpaces if it was there
+        delete this.closedSpaces[permId];
 
-        // GATE CLEARING
-        if (isRestored && urls.length > 0) {
-          this.clearRestorationGate(existingSpace.id);
+        // Clear restoration gate if applicable
+        if (this.isRecentlyRestored(permId) && windowUrls.length > 0) {
+          this.clearRestorationGate(permId);
         }
       } else {
         // Create new space for this window
-        const tabs = await this.tabManager.getTabs(window.id);
-        const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
-        const name = `${DEFAULT_SPACE_NAME} ${spaceId}`;
+        const permId = generateUUID('space');
+        const name = `${DEFAULT_SPACE_NAME} ${window.id}`;
 
-        console.log('[StateManager] 🆕 Creating new space during sync for orphaned window', {
-          windowId: window.id,
-          derivedSpaceId: spaceId,
-          urlCount: urls.length
-        });
+        console.log(`[StateManager] 🆕 Creating new space for window ${window.id} (permanentId: ${permId})`);
 
-        const space = await (this.storageManager as any).createSpace(window.id, name, urls);
-
-        this.spaces[spaceId] = {
-          ...space,
-          sourceWindowId: spaceId,
+        const newSpace: Space = {
+          id: permId,
+          permanentId: permId,
+          name,
+          urls: windowUrls,
+          named: false,
           windowId: window.id,
           isActive: true,
-          lastSync: now,
+          createdAt: now,
           lastModified: now,
-          lastUsed: now
+          lastUsed: now,
+          lastSync: now,
+          version: 1
         };
+
+        this.spaces[permId] = newSpace;
+        activePermIds.add(permId);
+        this.windowToSpaceMap.set(window.id, permId);
       }
     }
 
-    // Move orphaned spaces to closed set
-    // Iterate over a copy of keys to avoid modification issues during iteration
-    const activeSpaceIds = Object.keys(this.spaces);
-    for (const spaceId of activeSpaceIds) {
-      if (!currentOpenSpaceIds.has(spaceId)) {
-        const space = this.spaces[spaceId];
-        // Only save named spaces to closedSpaces. Unnamed spaces are discarded completely.
+    // =========================================================================
+    // PHASE 2: Handle orphaned spaces (no matching window)
+    // =========================================================================
+    
+    for (const [permId, space] of Object.entries(this.spaces)) {
+      if (!activePermIds.has(permId)) {
         if (space.named) {
-          // Move to closed spaces
-          this.closedSpaces[spaceId] = {
+          // Move named spaces to closedSpaces
+          console.log(`[StateManager] 📦 Moving orphaned named space "${space.name}" to closed`);
+          this.closedSpaces[permId] = {
             ...space,
             isActive: false,
             windowId: undefined,
             lastModified: now,
-            lastUsed: now,
             lastSync: now,
             version: space.version + 1
           };
+        } else {
+          console.log(`[StateManager] 🗑️ Discarding orphaned unnamed space (${permId})`);
         }
-        delete this.spaces[spaceId];
+        delete this.spaces[permId];
       }
     }
 
@@ -773,7 +824,8 @@ export class StateManager implements IStateManager {
 
     console.log('[StateManager] ✅ synchronizeWindowsAndSpaces complete', {
       activeSpaceCount: Object.keys(this.spaces).length,
-      closedSpaceCount: Object.keys(this.closedSpaces).length
+      closedSpaceCount: Object.keys(this.closedSpaces).length,
+      windowMappingSize: this.windowToSpaceMap.size
     });
   }
 
@@ -875,36 +927,35 @@ export class StateManager implements IStateManager {
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 1000)
   async createSpace(windowId: number, spaceName?: string, options?: { name?: string; named?: boolean }): Promise<void> {
-    const spaceId = windowId.toString();
-    await this.acquireLock(spaceId);
+    // Generate a permanent ID for the new space
+    const permId = generateUUID('space');
+    await this.acquireLock(permId);
 
     try {
       if (this.restoreRegistry.isWindowRestoring(windowId)) {
         console.log('[StateManager] createSpace skipped - window is under restoration', {
           windowId,
-          spaceId
+          permId
+        });
+        return;
+      }
+
+      // Check if this window already has a space
+      const existingPermId = this.windowToSpaceMap.get(windowId);
+      if (existingPermId) {
+        console.log('[StateManager] createSpace skipped - window already has space', {
+          windowId,
+          existingPermId
         });
         return;
       }
 
       console.log('[StateManager] 🆕 createSpace invoked', {
         windowId,
-        spaceId,
+        permId,
         providedName: spaceName,
-        options,
-        activeRestores: this.restoreRegistry.listActive().map(snapshot => ({
-          closedSpaceId: snapshot.closedSpaceId,
-          windowId: snapshot.windowId,
-          status: snapshot.status
-        })),
-        hasActiveSpace: !!this.spaces[spaceId],
-        hasClosedSpace: !!this.closedSpaces[spaceId]
+        options
       });
-
-      // Verify space doesn't already exist
-      if (await this.getSpaceById(spaceId)) {
-        throw new Error(`Space already exists with ID: ${spaceId}`);
-      }
 
       // Get tabs from window - retry if empty as window might be initializing
       let tabs = await this.tabManager.getTabs(windowId);
@@ -915,49 +966,74 @@ export class StateManager implements IStateManager {
       }
       const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
 
-      // Create new space using StorageManager
-      const name = options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${spaceId}`;
+      // Create new space
+      const name = options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${windowId}`;
       const named = options?.named || false;
+      const now = Date.now();
 
       console.log('[StateManager] 🏷️ Creating space with name assignment', {
-        spaceId,
+        permId,
         name,
         named,
         urlCount: urls.length
       });
 
-      const space = await (this.storageManager as any).createSpace(windowId, name, urls, named);
+      const newSpace: Space = {
+        id: permId,
+        permanentId: permId,
+        name,
+        urls,
+        named,
+        windowId,
+        isActive: true,
+        createdAt: now,
+        lastModified: now,
+        lastUsed: now,
+        lastSync: now,
+        version: 1
+      };
 
       // Atomic update
-      const updatedSpaces = { ...this.spaces, [spaceId]: space };
-      await this.storageManager.saveSpaces(updatedSpaces);
-      this.spaces = updatedSpaces;
+      this.spaces[permId] = newSpace;
+      this.windowToSpaceMap.set(windowId, permId);
+      
+      await this.storageManager.saveSpaces(this.spaces);
 
       this.broadcastStateUpdate();
     } catch (error) {
       throw new Error(`Failed to create space: ${(error as Error).message}`);
     } finally {
-      this.releaseLock(spaceId);
+      this.releaseLock(permId);
     }
   }
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 1000)
   async closeSpace(windowId: number): Promise<void> {
     console.log(`[StateManager] closeSpace called for windowId: ${windowId}`);
-    const activeSpaceId = windowId.toString();
-    const space = this.spaces[activeSpaceId];
-
-    if (!space) {
-      console.log(`[StateManager] Space not found for windowId: ${windowId}, returning.`);
+    
+    // Look up space by windowId using mapping
+    const permId = this.windowToSpaceMap.get(windowId);
+    if (!permId) {
+      console.log(`[StateManager] No space mapping found for windowId: ${windowId}, returning.`);
       return;
     }
+    
+    const space = this.spaces[permId];
+    if (!space) {
+      console.log(`[StateManager] Space not found for permId: ${permId}, returning.`);
+      this.windowToSpaceMap.delete(windowId);
+      return;
+    }
+
+    // Clean up window mapping
+    this.windowToSpaceMap.delete(windowId);
 
     // Only save named spaces to closedSpaces. Unnamed spaces are discarded completely.
     if (!space.named) {
       console.log(`[StateManager] Space is unnamed - discarding without saving to closedSpaces`);
-      delete this.spaces[activeSpaceId];
+      delete this.spaces[permId];
       // Delete active tabs for this space
-      await (this.storageManager as any).deleteTabsForSpace(activeSpaceId, 'active');
+      await (this.storageManager as any).deleteTabsForSpace(permId, 'active');
       // Save updated spaces (with unnamed space removed)
       await this.storageManager.saveSpaces(this.spaces);
       return;
@@ -981,21 +1057,17 @@ export class StateManager implements IStateManager {
       urls = space.urls;
     }
 
-    // Generate a new UUID for the closed space
-    const closedSpaceId = generateUUID('closed-space');
-
-    // Remove from active and add to closed under UUID key
-    delete this.spaces[activeSpaceId];
+    // Move from active to closed (keep same permanentId!)
+    delete this.spaces[permId];
     const closedSpace = preserveSpaceIdentity(space, {
-      id: closedSpaceId,
       urls,
       windowId: undefined,
       isActive: false
     });
-    this.closedSpaces[closedSpaceId] = closedSpace;
+    this.closedSpaces[permId] = closedSpace;
 
     console.log(`[StateManager] Closed space data:`);
-    console.log(`  - ID: ${closedSpaceId}`);
+    console.log(`  - permanentId: ${permId}`);
     console.log(`  - Name: "${closedSpace.name}"`);
     console.log(`  - Named: ${closedSpace.named}`);
     console.log(`  - URLs: ${closedSpace.urls.length} tabs`);
@@ -1003,29 +1075,29 @@ export class StateManager implements IStateManager {
     // Persist tabs for the closed space and update stores atomically-ish
     await Promise.all([
       (this.storageManager as any).saveTabsForSpace(
-        closedSpaceId,
+        permId,
         'closed',
         urls.map((url, index) => ({
           id: generateUUID('tab'),
-          spaceId: closedSpaceId,
+          spaceId: permId,
           kind: 'closed',
           url,
           index,
           createdAt: Date.now()
         }))
       ),
-      (this.storageManager as any).deleteTabsForSpace(activeSpaceId, 'active'),
+      (this.storageManager as any).deleteTabsForSpace(permId, 'active'),
       this.storageManager.saveSpaces(this.spaces),
       this.storageManager.saveClosedSpaces(this.closedSpaces)
     ]);
 
     // Queue the state update for broadcasting
     await this.updateQueue.enqueue({
-      id: `close-space-${closedSpaceId}-${Date.now()}`,
+      id: `close-space-${permId}-${Date.now()}`,
       type: MessageTypes.SPACE_UPDATED,
       payload: {
-        spaceId: closedSpaceId,
-        space: this.closedSpaces[closedSpaceId],
+        spaceId: permId,
+        space: this.closedSpaces[permId],
         action: 'closed'
       },
       priority: StateUpdatePriority.HIGH
@@ -1036,43 +1108,40 @@ export class StateManager implements IStateManager {
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   async restoreSpace(spaceId: string, windowId?: number): Promise<void> {
-    await this.acquireLock(spaceId);
+    // spaceId is now permanentId
+    const permId = spaceId;
+    await this.acquireLock(permId);
 
     try {
-      // Check both closedSpaces and inactive spaces in the spaces object
-      let space = this.closedSpaces[spaceId];
+      // Look up space by permanentId
+      let space = this.closedSpaces[permId];
       let fromClosedSpaces = true;
 
       if (!space) {
         // Check if it's an inactive space in the spaces object
-        space = this.spaces[spaceId];
+        space = this.spaces[permId];
         fromClosedSpaces = false;
 
         if (!space) {
-          throw new Error(`Space not found: ${spaceId}`);
+          throw new Error(`Space not found: ${permId}`);
         }
 
         // If space is already active, don't need to restore
         if (space.isActive) {
-          console.log(`[StateManager] Space ${spaceId} is already active, skipping restore`);
+          console.log(`[StateManager] Space ${permId} is already active, skipping restore`);
           return;
         }
       }
 
-      // If restoring from closed store and we have a new windowId, re-key to that id
-      let targetActiveId = space.id;
+      // Register restoration intent
       if (windowId) {
-        this.attachWindowToRestore(spaceId, windowId);
-      }
-
-      if (fromClosedSpaces && windowId) {
-        targetActiveId = windowId.toString();
+        this.attachWindowToRestore(permId, windowId);
       }
 
       // If restoring from closed, reconstruct URLs from tabs store
       let urls = space.urls || [];
       if (fromClosedSpaces) {
-        const closedTabs = await (this.storageManager as any).loadTabsForSpace(spaceId, 'closed');
+        const closedTabs = await (this.storageManager as any).loadTabsForSpace(permId, 'closed');
         if (closedTabs && closedTabs.length) {
           urls = closedTabs
             .sort((a: any, b: any) => (a.index ?? 0) - (b.index ?? 0))
@@ -1080,80 +1149,74 @@ export class StateManager implements IStateManager {
         }
       }
 
+      // Update space - keep same permanentId, just update windowId
       const updatedSpace = preserveSpaceIdentity(space, {
-        id: targetActiveId,
         urls,
-        windowId: windowId, // Associate with new window if provided
-        isActive: true, // Mark as active when restored
-        sourceWindowId: windowId?.toString() || space.sourceWindowId
+        windowId: windowId,
+        isActive: true
       });
 
       console.log(`[StateManager] Restored space data:`);
-      console.log(`  - ID: ${targetActiveId}`);
+      console.log(`  - permanentId: ${permId}`);
       console.log(`  - Name: "${updatedSpace.name}"`);
       console.log(`  - Named: ${updatedSpace.named}`);
       console.log(`  - URLs: ${updatedSpace.urls.length} tabs`);
+      console.log(`  - windowId: ${windowId}`);
 
-      // Validate state transition when not changing id; skip when re-keying
-      if (!fromClosedSpaces || targetActiveId === space.id) {
-        this.validateStateTransition(space, updatedSpace);
+      // Validate state transition
+      this.validateStateTransition(space, updatedSpace);
+
+      // Move from closedSpaces to spaces (same key!)
+      if (fromClosedSpaces) {
+        delete this.closedSpaces[permId];
+      }
+      this.spaces[permId] = updatedSpace;
+
+      // Update window mapping
+      if (windowId) {
+        this.windowToSpaceMap.set(windowId, permId);
       }
 
-      // Atomic updates - handle both cases
-      const updatedClosedSpaces = { ...this.closedSpaces };
-      const updatedSpaces = { ...this.spaces } as Record<string, Space>;
-
+      // Handle tab storage
       if (fromClosedSpaces) {
-        // Remove from closed spaces, add to active spaces under new key
-        delete updatedClosedSpaces[spaceId];
-        updatedSpaces[targetActiveId] = updatedSpace;
-
-        // Move tabs from closed -> active
-        if (windowId) {
-          const closedTabs = await (this.storageManager as any).loadTabsForSpace(spaceId, 'closed');
+        const closedTabs = await (this.storageManager as any).loadTabsForSpace(permId, 'closed');
+        if (closedTabs && closedTabs.length) {
           await Promise.all([
             (this.storageManager as any).saveTabsForSpace(
-              targetActiveId,
+              permId,
               'active',
               (closedTabs || []).map((t: any, idx: number) => ({
                 id: generateUUID('tab'),
-                spaceId: targetActiveId,
+                spaceId: permId,
                 kind: 'active',
                 url: t.url,
                 index: idx,
                 createdAt: Date.now()
               }))
             ),
-            (this.storageManager as any).deleteTabsForSpace(spaceId, 'closed')
+            (this.storageManager as any).deleteTabsForSpace(permId, 'closed')
           ]);
         }
-      } else {
-        // Just update the inactive space to active in spaces
-        updatedSpaces[targetActiveId] = updatedSpace;
       }
 
       // Save updates atomically
       await Promise.all([
-        this.storageManager.saveSpaces(updatedSpaces),
-        this.storageManager.saveClosedSpaces(updatedClosedSpaces)
+        this.storageManager.saveSpaces(this.spaces),
+        this.storageManager.saveClosedSpaces(this.closedSpaces)
       ]);
-
-      // Update memory state
-      this.spaces = updatedSpaces;
-      this.closedSpaces = updatedClosedSpaces;
 
       // CRITICAL: Mark space as recently restored to protect from premature validation
       // This gate prevents synchronization from destroying the restored space before tabs load
       if (windowId) {
-        this.markSpaceAsRestored(targetActiveId, windowId, updatedSpace.name);
+        this.markSpaceAsRestored(permId, windowId, updatedSpace.name);
       }
 
       // Queue the state update for broadcasting
       await this.updateQueue.enqueue({
-        id: `restore-space-${targetActiveId}-${Date.now()}`,
+        id: `restore-space-${permId}-${Date.now()}`,
         type: MessageTypes.SPACE_UPDATED,
         payload: {
-          spaceId: targetActiveId,
+          spaceId: permId,
           space: updatedSpace,
           action: 'restored'
         },
@@ -1295,9 +1358,13 @@ export class StateManager implements IStateManager {
   }
 
   async renameSpace(windowId: number, name: string): Promise<void> {
-    // Delegate to setSpaceName which has the full implementation
-    const spaceId = windowId.toString();
-    await this.setSpaceName(spaceId, name);
+    // Look up permanentId via window mapping
+    const permId = this.windowToSpaceMap.get(windowId);
+    if (!permId) {
+      console.log(`[StateManager] renameSpace: no space found for windowId ${windowId}`);
+      return;
+    }
+    await this.setSpaceName(permId, name);
   }
 
   /**
