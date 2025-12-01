@@ -32,7 +32,7 @@ describe('StorageManager Race Condition', () => {
         };
 
         // Mock get to simulate delay
-        mockChrome.storage.local.get.mockImplementation(async (keys) => {
+        mockChrome.storage.local.get.mockImplementation(async (_keys) => {
             await new Promise(resolve => setTimeout(resolve, 10)); // 10ms delay
             return storageStore;
         });

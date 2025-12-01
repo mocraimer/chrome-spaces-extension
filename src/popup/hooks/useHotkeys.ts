@@ -15,7 +15,7 @@ interface HotkeyOptions {
 }
 
 // Parse key combo string into parts
-function parseKeyCombo(combo: string): { key: string; ctrl: boolean; shift: boolean; alt: boolean; meta: boolean } {
+function _parseKeyCombo(combo: string): { key: string; ctrl: boolean; shift: boolean; alt: boolean; meta: boolean } {
   const parts = combo.toLowerCase().split('+');
   return {
     key: parts[parts.length - 1],
@@ -114,7 +114,7 @@ export function useHotkeys(
 
   // Helper to unregister hotkeys
   const unregisterHotkey = useCallback((combo: KeyCombo) => {
-    const { [combo]: _, ...rest } = hotkeysRef.current;
+    const { [combo]: _removed, ...rest } = hotkeysRef.current;
     hotkeysRef.current = rest;
   }, []);
 
@@ -167,10 +167,10 @@ export const createAppHotkeys = (handlers: {
   onClose?: () => void;
   onHelp?: () => void;
 }): HotkeyMap => ({
-  '/': (e) => handlers.onSearch?.(),
-  'ctrl+n': (e) => handlers.onNewSpace?.(),
-  'ctrl+w': (e) => handlers.onClose?.(),
-  '?': (e) => handlers.onHelp?.(),
+  '/': (_e) => handlers.onSearch?.(),
+  'ctrl+n': (_e) => handlers.onNewSpace?.(),
+  'ctrl+w': (_e) => handlers.onClose?.(),
+  '?': (_e) => handlers.onHelp?.(),
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].reduce((acc, num) => ({
     ...acc,
     [`ctrl+${num}`]: () => handlers.onSwitchSpace?.(num - 1)

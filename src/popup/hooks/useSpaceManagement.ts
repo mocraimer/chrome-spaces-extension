@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Space } from '@/shared/types/Space';
 import { RootState, AppDispatch } from '../store/types';
@@ -7,8 +7,7 @@ import {
   switchToSpace,
   restoreSpace,
   removeClosedSpace,
-  fetchSpaces,
-  clearOperationError
+  fetchSpaces
 } from '../store/slices/spacesSlice';
 
 const MAX_NAME_LENGTH = 100;
@@ -35,7 +34,7 @@ export interface SpaceManagementActions {
 
 export const useSpaceManagement = (): SpaceManagementState & SpaceManagementActions => {
   const dispatch = useDispatch<AppDispatch>();
-  const { spaces, closedSpaces, operationErrors } = useSelector((state: RootState) => state.spaces);
+  const { spaces, closedSpaces } = useSelector((state: RootState) => state.spaces);
 
   // Local state for editing and confirmation
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);

@@ -1,5 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
-import { Space } from '@/shared/types/Space';
+import React, { useState, useCallback, useRef } from 'react';
 
 interface DragState {
   isDragging: boolean;
@@ -110,7 +109,7 @@ export function useDragDrop({
   }, [dragState.isDragging, dragState.dropTargetId]);
 
   // End dragging
-  const handleDragEnd = useCallback((event: MouseEvent) => {
+  const handleDragEnd = useCallback((_event: MouseEvent) => {
     document.removeEventListener('mousemove', handleDragMove);
     document.removeEventListener('mouseup', handleDragEnd);
 

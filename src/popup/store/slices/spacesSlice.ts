@@ -1,4 +1,3 @@
-import { Space } from '@/shared/types/Space';
 import { ActionTypes } from '@/shared/constants';
 import {
   SpacesState,
@@ -9,8 +8,7 @@ import {
   FetchSpacesResponse,
   isAsyncAction,
   OptimisticUpdate,
-  ActionQueue,
-  debounce
+  ActionQueue
 } from '../types';
 
 // Message timeout configuration (10 seconds allows for service worker initialization)
@@ -279,7 +277,7 @@ export default function spacesReducer(
 
     case REMOVE_OPTIMISTIC_UPDATE: {
       const updateId = action.payload;
-      const { [updateId]: removed, ...remainingUpdates } = state.optimisticUpdates;
+      const { [updateId]: _removed, ...remainingUpdates } = state.optimisticUpdates;
       return {
         ...state,
         optimisticUpdates: remainingUpdates
@@ -291,8 +289,8 @@ export default function spacesReducer(
       const update = state.optimisticUpdates[updateId];
       if (!update) return state;
 
-      const { [updateId]: removed, ...remainingUpdates } = state.optimisticUpdates;
-      let updatedState = { ...state, optimisticUpdates: remainingUpdates };
+      const { [updateId]: _removed, ...remainingUpdates } = state.optimisticUpdates;
+      const updatedState = { ...state, optimisticUpdates: remainingUpdates };
 
       // Rollback the optimistic change
       switch (update.type) {
@@ -348,7 +346,7 @@ export default function spacesReducer(
 
     case CLEAR_OPERATION_ERROR: {
       const errorId = action.payload;
-      const { [errorId]: removed, ...remainingErrors } = state.operationErrors;
+      const { [errorId]: _removed, ...remainingErrors } = state.operationErrors;
       return {
         ...state,
         operationErrors: remainingErrors
@@ -419,7 +417,7 @@ export default function spacesReducer(
 
     case `${RESTORE_SPACE}/fulfilled`: {
       if (isAsyncAction(action) && action.payload.success) {
-        const { [action.meta.arg]: _, ...remainingClosedSpaces } = state.closedSpaces;
+        const { [action.meta.arg]: _removed, ...remainingClosedSpaces } = state.closedSpaces;
         return {
           ...state,
           closedSpaces: remainingClosedSpaces
@@ -429,7 +427,7 @@ export default function spacesReducer(
     }
 
     case `${REMOVE_CLOSED_SPACE}/fulfilled`: {
-      const { [action.payload]: _, ...remainingClosedSpaces } = state.closedSpaces;
+      const { [action.payload]: _removed, ...remainingClosedSpaces } = state.closedSpaces;
       return {
         ...state,
         closedSpaces: remainingClosedSpaces

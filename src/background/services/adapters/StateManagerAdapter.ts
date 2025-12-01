@@ -1,4 +1,4 @@
-import { SpaceState, Space } from '../../../shared/types/Space';
+import { SpaceState } from '../../../shared/types/Space';
 import { StateManager } from '../StateManager';
 
 /**

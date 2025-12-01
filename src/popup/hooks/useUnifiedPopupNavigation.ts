@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef, MutableRefObject } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Space } from '@/shared/types/Space';
 
 export interface UnifiedPopupNavigationProps {
@@ -90,11 +90,6 @@ export const useUnifiedPopupNavigation = ({
     onStartEditing,
     onCancelEdit
   ]);
-
-  // Reset selected index when filtered results change
-  const resetSelectedIndex = useCallback(() => {
-    setSelectedIndex(0);
-  }, []);
 
   return {
     selectedIndex,

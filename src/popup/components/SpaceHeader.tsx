@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useAppSelector, useAppDispatch } from '../../shared/hooks/storeHooks';
 import { renameSpace } from '../store/slices/spacesSlice';
-import type { AppDispatch } from '../../shared/types/store';
 import { debounce } from '../../shared/utils';
 
 export const SpaceHeader: React.FC = () => {

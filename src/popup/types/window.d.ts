@@ -26,4 +26,4 @@ interface VisualViewport {
   removeEventListener(type: string, callback: EventListener | null): void;
 }
 
-declare var visualViewport: VisualViewport | null;
+declare let visualViewport: VisualViewport | null;

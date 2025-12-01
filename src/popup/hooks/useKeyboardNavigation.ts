@@ -119,7 +119,7 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
           // Clear selection
           dispatch(selectSpace(''));
           break;
-        case '/':
+        case '/': {
           // Focus search
           e.preventDefault();
           const searchInput = document.getElementById('search-input');
@@ -128,6 +128,7 @@ export const useKeyboardNavigation = ({ spaces, closedSpaces, searchQuery }: Key
             setSearchFocused(true);
           }
           break;
+        }
       }
     };
 

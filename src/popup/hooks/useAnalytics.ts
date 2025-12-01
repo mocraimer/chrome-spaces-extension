@@ -35,7 +35,7 @@ export function useAnalytics(options: AnalyticsOptions = {}) {
     onError
   } = options;
 
-  const { preferences } = usePreferences();
+  const { preferences: _preferences } = usePreferences();
   const isEnabled = true; // We'll handle telemetry opt-in in a separate PR
 
   // Initialize session

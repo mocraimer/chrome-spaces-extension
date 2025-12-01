@@ -20,13 +20,34 @@
   "plugins": ["@typescript-eslint"],
   "rules": {
     "no-console": ["warn", { "allow": ["warn", "error"] }],
-    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "destructuredArrayIgnorePattern": "^_" }],
+    "no-unused-vars": "off",
     "prefer-const": "error",
     "no-var": "error",
     "@typescript-eslint/no-explicit-any": "warn"
   },
   "globals": {
-    "chrome": "readonly"
+    "chrome": "readonly",
+    "NodeJS": "readonly",
+    "EventListener": "readonly",
+    "HTMLElementTagNameMap": "readonly",
+    "AddEventListenerOptions": "readonly"
   },
-  "ignorePatterns": ["build/", "node_modules/", "playwright-report/", "e2e-tests/", "webpack.config.ts", "playwright.config.ts"]
+  "ignorePatterns": ["build/", "node_modules/", "playwright-report/", "e2e-tests/", "webpack.config.ts", "playwright.config.ts"],
+  "overrides": [
+    {
+      "files": ["src/background/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["src/tests/**/*.ts", "src/tests/**/*.tsx"],
+      "rules": {
+        "no-console": "off",
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "destructuredArrayIgnorePattern": "^_" }]
+      }
+    }
+  ]
 }

@@ -30,7 +30,7 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
   currentWindowId,
   editingSpaceId,
   editingName,
-  showConfirmDelete,
+  showConfirmDelete: _showConfirmDelete,
   onSpaceAction,
   getDisplayName,
   className = ''

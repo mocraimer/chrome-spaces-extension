@@ -90,7 +90,7 @@ export const mockDocumentEventListeners = () => {
     eventMap[event] = handler;
   };
 
-  const removeEventListener: MockEventListener = (event, handler) => {
+  const removeEventListener: MockEventListener = (event, _handler) => {
     delete eventMap[event];
   };
 
