@@ -780,4 +780,306 @@ describe('StateManager', () => {
       expect(name).toBe('Test Space');
     });
   });
+
+  describe('acquireLock', () => {
+    const testPermId = 'perm-lock-test';
+
+    beforeEach(async () => {
+      storageManager.loadSpaces.mockResolvedValue({
+        [testPermId]: createMockSpace(testPermId, 'Lock Test Space', { windowId: 1 })
+      });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      await stateManager.initialize();
+    });
+
+    it('should acquire lock successfully when no contention', async () => {
+      // Access the private acquireLock method
+      const acquireLock = (stateManager as any).acquireLock.bind(stateManager);
+      const releaseLock = (stateManager as any).releaseLock.bind(stateManager);
+
+      // Should not throw
+      await expect(acquireLock('test-space-id')).resolves.not.toThrow();
+
+      // Clean up
+      releaseLock('test-space-id');
+    });
+
+    it('should throw after timeout when lock is continuously held by manipulating internal state', async () => {
+      const shortTimeout = 50; // Very short timeout for testing
+      const lockId = 'timeout-lock';
+
+      // Directly manipulate internal state to simulate a held lock
+      // Create a promise that resolves after the timeout would expire
+      let resolveHolder: () => void;
+      const holderPromise = new Promise<void>(resolve => {
+        resolveHolder = resolve;
+      });
+
+      // Set up the "held" lock
+      (stateManager as any).updateLock.set(lockId, holderPromise);
+      (stateManager as any).lockResolvers.set(lockId, resolveHolder!);
+
+      // Start an acquire attempt with short timeout
+      const acquirePromise = (stateManager as any).acquireLock(lockId, shortTimeout);
+
+      // Wait longer than timeout then release the lock
+      // The waiter should check timeout after the promise resolves
+      await new Promise(resolve => setTimeout(resolve, shortTimeout + 30));
+
+      // Release - this resolves holderPromise
+      (stateManager as any).releaseLock(lockId);
+
+      // But immediately re-lock to ensure the timeout check finds a lock
+      const secondHolderPromise = new Promise<void>(resolve => {
+        (stateManager as any).lockResolvers.set(lockId, resolve);
+      });
+      (stateManager as any).updateLock.set(lockId, secondHolderPromise);
+
+      // The acquire should timeout because elapsed time > timeout
+      await expect(acquirePromise).rejects.toThrow('Lock acquisition timeout');
+
+      // Clean up
+      (stateManager as any).updateLock.delete(lockId);
+      (stateManager as any).lockResolvers.delete(lockId);
+    }, 5000);
+
+    it('should acquire lock when released before timeout', async () => {
+      const acquireLock = (stateManager as any).acquireLock.bind(stateManager);
+      const releaseLock = (stateManager as any).releaseLock.bind(stateManager);
+      const timeout = 500; // Longer timeout
+
+      // Acquire lock
+      await acquireLock('quick-release-space');
+
+      // Start second acquire
+      const acquirePromise = acquireLock('quick-release-space', timeout);
+
+      // Release quickly (before timeout)
+      await new Promise(resolve => setTimeout(resolve, 50));
+      releaseLock('quick-release-space');
+
+      // Second acquire should succeed
+      await expect(acquirePromise).resolves.not.toThrow();
+
+      // Clean up
+      releaseLock('quick-release-space');
+    }, 5000);
+
+    it('should allow lock acquisition after previous lock is released', async () => {
+      const acquireLock = (stateManager as any).acquireLock.bind(stateManager);
+      const releaseLock = (stateManager as any).releaseLock.bind(stateManager);
+
+      // Acquire and release first lock
+      await acquireLock('reusable-lock');
+      releaseLock('reusable-lock');
+
+      // Should be able to acquire again
+      await expect(acquireLock('reusable-lock')).resolves.not.toThrow();
+
+      // Clean up
+      releaseLock('reusable-lock');
+    });
+
+    it('should allow concurrent locks on different space IDs', async () => {
+      const acquireLock = (stateManager as any).acquireLock.bind(stateManager);
+      const releaseLock = (stateManager as any).releaseLock.bind(stateManager);
+
+      // Acquire locks on different spaces concurrently
+      await Promise.all([
+        acquireLock('space-a'),
+        acquireLock('space-b'),
+        acquireLock('space-c')
+      ]);
+
+      // All locks should be held
+      expect((stateManager as any).updateLock.has('space-a')).toBe(true);
+      expect((stateManager as any).updateLock.has('space-b')).toBe(true);
+      expect((stateManager as any).updateLock.has('space-c')).toBe(true);
+
+      // Clean up
+      releaseLock('space-a');
+      releaseLock('space-b');
+      releaseLock('space-c');
+    });
+  });
+
+  describe('synchronizeWindowsAndSpaces concurrency', () => {
+    const mockTab: chrome.tabs.Tab = {
+      id: 1,
+      index: 0,
+      pinned: false,
+      highlighted: false,
+      windowId: 1,
+      active: false,
+      incognito: false,
+      selected: false,
+      autoDiscardable: true,
+      discarded: false,
+      url: 'https://example.com',
+      groupId: -1
+    };
+
+    const mockWindow: chrome.windows.Window = {
+      id: 1,
+      tabs: [mockTab],
+      focused: false,
+      alwaysOnTop: false,
+      incognito: false,
+      type: 'normal',
+      state: 'normal'
+    };
+
+    beforeEach(async () => {
+      storageManager.loadSpaces.mockResolvedValue({});
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      tabManager.getTabs.mockResolvedValue([mockTab]);
+      tabManager.getTabUrl.mockReturnValue('https://example.com');
+      await stateManager.initialize();
+    });
+
+    it('should not run concurrently - queues pending request', async () => {
+      // Track how many times saveState is called
+      let saveStateCallCount = 0;
+      storageManager.saveState.mockImplementation(async () => {
+        saveStateCallCount++;
+        // Simulate slow operation
+        await new Promise(resolve => setTimeout(resolve, 50));
+      });
+
+      // Start two sync operations concurrently
+      const sync1 = stateManager.synchronizeWindowsAndSpaces();
+      const sync2 = stateManager.synchronizeWindowsAndSpaces();
+
+      // Wait for both to complete
+      await Promise.all([sync1, sync2]);
+
+      // The second sync should be queued and run after the first completes
+      // So we expect 2 saveState calls (one for each sync)
+      expect(saveStateCallCount).toBe(2);
+    });
+
+    it('should set syncInProgress flag during synchronization', async () => {
+      let syncInProgressDuringOperation = false;
+
+      storageManager.saveState.mockImplementation(async () => {
+        // Check the flag during the operation
+        syncInProgressDuringOperation = (stateManager as any).syncInProgress;
+      });
+
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      expect(syncInProgressDuringOperation).toBe(true);
+      // After completion, flag should be false
+      expect((stateManager as any).syncInProgress).toBe(false);
+    });
+
+    it('should process pending sync request after first completes', async () => {
+      const operationOrder: string[] = [];
+
+      storageManager.saveState.mockImplementation(async () => {
+        operationOrder.push('saveState');
+        await new Promise(resolve => setTimeout(resolve, 20));
+      });
+
+      // Start first sync
+      const sync1Promise = stateManager.synchronizeWindowsAndSpaces();
+
+      // Immediately trigger another sync while first is in progress
+      // Need a small delay to ensure the first sync has started
+      await new Promise(resolve => setTimeout(resolve, 5));
+      const sync2Promise = stateManager.synchronizeWindowsAndSpaces();
+
+      await Promise.all([sync1Promise, sync2Promise]);
+
+      // Both syncs should have run (in sequence, not parallel)
+      expect(operationOrder.length).toBe(2);
+    });
+
+    it('should reset pendingSyncRequest flag after processing', async () => {
+      storageManager.saveState.mockImplementation(async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      });
+
+      // Trigger sync
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      // After completion, pending flag should be false
+      expect((stateManager as any).pendingSyncRequest).toBe(false);
+    });
+  });
+
+  describe('setSpaceName input validation', () => {
+    const testPermId = 'perm-validation-test';
+
+    beforeEach(async () => {
+      storageManager.loadSpaces.mockResolvedValue({
+        [testPermId]: createMockSpace(testPermId, 'Original Name', { windowId: 1 })
+      });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      await stateManager.initialize();
+    });
+
+    it('should throw for names exceeding max length', async () => {
+      const longName = 'a'.repeat(101);
+      await expect(stateManager.setSpaceName(testPermId, longName))
+        .rejects.toThrow('exceeds maximum length');
+    });
+
+    it('should accept names at max length (100 characters)', async () => {
+      const maxName = 'a'.repeat(100);
+      await expect(stateManager.setSpaceName(testPermId, maxName))
+        .resolves.not.toThrow();
+
+      expect(storageManager.saveSpaces).toHaveBeenCalledWith(
+        expect.objectContaining({
+          [testPermId]: expect.objectContaining({
+            name: maxName
+          })
+        })
+      );
+    });
+
+    it('should accept names below max length', async () => {
+      const shortName = 'a'.repeat(50);
+      await expect(stateManager.setSpaceName(testPermId, shortName))
+        .resolves.not.toThrow();
+
+      expect(storageManager.saveSpaces).toHaveBeenCalledWith(
+        expect.objectContaining({
+          [testPermId]: expect.objectContaining({
+            name: shortName
+          })
+        })
+      );
+    });
+
+    it('should count length after trimming whitespace', async () => {
+      // 98 chars + leading/trailing spaces should be under 100 after trim
+      const nameWithSpaces = '  ' + 'a'.repeat(98) + '  ';
+      await expect(stateManager.setSpaceName(testPermId, nameWithSpaces))
+        .resolves.not.toThrow();
+
+      expect(storageManager.saveSpaces).toHaveBeenCalledWith(
+        expect.objectContaining({
+          [testPermId]: expect.objectContaining({
+            name: 'a'.repeat(98)
+          })
+        })
+      );
+    });
+
+    it('should throw after trimming if name still exceeds max length', async () => {
+      // Even after trimming, if 101 chars remain, should throw
+      const longNameWithSpaces = '  ' + 'a'.repeat(101) + '  ';
+      await expect(stateManager.setSpaceName(testPermId, longNameWithSpaces))
+        .rejects.toThrow('exceeds maximum length');
+    });
+
+    it('should include max length value in error message', async () => {
+      const longName = 'a'.repeat(101);
+      await expect(stateManager.setSpaceName(testPermId, longName))
+        .rejects.toThrow('100');
+    });
+  });
 });

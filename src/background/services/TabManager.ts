@@ -86,7 +86,16 @@ export class TabManager implements ITabManager {
    */
   async waitForTabLoad(tabId: number): Promise<void> {
     return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+      };
+
       const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         cleanup();
         reject(new Error('Tab load timeout'));
       }, TAB_LOAD_TIMEOUT);
@@ -96,14 +105,11 @@ export class TabManager implements ITabManager {
         changeInfo: chrome.tabs.TabChangeInfo
       ) => {
         if (changedTabId === tabId && changeInfo.status === 'complete') {
+          if (settled) return;
+          settled = true;
           cleanup();
           resolve();
         }
-      };
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        chrome.tabs.onUpdated.removeListener(listener);
       };
 
       chrome.tabs.onUpdated.addListener(listener);

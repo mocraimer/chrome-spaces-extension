@@ -312,6 +312,45 @@ export default function spacesReducer(
           }
           break;
         }
+        case 'close': {
+          // Rollback: Move space back from closedSpaces to spaces
+          const { windowId } = update.payload;
+          const spaceId = windowId.toString();
+          const { space: originalSpace } = update.rollbackData;
+          const closedSpace = updatedState.closedSpaces[spaceId];
+          if (closedSpace && originalSpace) {
+            const { [spaceId]: _removed, ...remainingClosed } = updatedState.closedSpaces;
+            updatedState.closedSpaces = remainingClosed;
+            updatedState.spaces = {
+              ...updatedState.spaces,
+              [spaceId]: {
+                ...closedSpace,
+                windowId: originalSpace.windowId,
+                isActive: true
+              }
+            };
+          }
+          break;
+        }
+        case 'restore': {
+          // Rollback: Move space back from spaces to closedSpaces
+          const { spaceId } = update.payload;
+          const { space: originalSpace } = update.rollbackData;
+          const restoredSpace = updatedState.spaces[spaceId];
+          if (restoredSpace && originalSpace) {
+            const { [spaceId]: _removed, ...remainingSpaces } = updatedState.spaces;
+            updatedState.spaces = remainingSpaces;
+            updatedState.closedSpaces = {
+              ...updatedState.closedSpaces,
+              [spaceId]: {
+                ...restoredSpace,
+                windowId: undefined,
+                isActive: false
+              }
+            };
+          }
+          break;
+        }
       }
 
       return updatedState;

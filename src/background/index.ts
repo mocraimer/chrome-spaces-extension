@@ -6,8 +6,7 @@ import { MessageHandler } from './services/MessageHandler';
 import { StateUpdateQueue } from './services/StateUpdateQueue';
 import { StateBroadcastService } from './services/StateBroadcastService';
 import { RestoreSpaceTransaction } from './services/RestoreSpaceTransaction';
-import { STARTUP_DELAY, RECOVERY_CHECK_DELAY, SETTINGS_KEY } from '@/shared/constants';
-import { SettingsState } from '@/options/store/slices/settingsSlice';
+import { STARTUP_DELAY, RECOVERY_CHECK_DELAY } from '@/shared/constants';
 import { PerformanceMessageHandler } from './services/performance/PerformanceMessageHandler';
 import { PerformanceTrackingService, MetricCategories } from './services/performance/PerformanceTrackingService';
 import { StorageManager as IStorageManager } from '@/shared/types/Services';
@@ -206,16 +205,6 @@ class BackgroundService {
       await this.stateManager.synchronizeWindowsAndSpaces();
     } catch (error) {
       console.error('Startup error:', error);
-    }
-  }
-
-  private async loadSettings(): Promise<SettingsState | null> {
-    try {
-      const data = await chrome.storage.local.get(SETTINGS_KEY);
-      return data[SETTINGS_KEY] || null;
-    } catch (error) {
-      console.error('Error loading settings:', error);
-      return null;
     }
   }
 

@@ -11,20 +11,31 @@ import { generateUUID } from '@/shared/utils/uuid';
 import { preserveSpaceIdentity } from '@/shared/utils/spaceHelpers';
 import { RestoreRegistry, RestoreSnapshot } from './types/RestoreRegistry';
 
-export interface StateCache {
+export interface StateCache<T = unknown> {
   timestamp: number;
-  data: any;
+  data: T;
   version: number;
 }
 
 export class StateManager implements IStateManager {
+  // Configuration constants
+  private static readonly CONFIG = {
+    CACHE_TTL_MS: 5 * 60 * 1000,
+    INCREMENTAL_UPDATE_THRESHOLD: 10,
+    BROADCAST_DEBOUNCE_MS: 100,
+    MAX_BROADCAST_QUEUE: 50,
+    LOCK_TIMEOUT_MS: 5000,
+    URL_MATCH_THRESHOLD: 0.5,
+    MAX_SPACE_NAME_LENGTH: 100
+  } as const;
+
   // Spaces keyed by permanentId (stable across restarts)
   private spaces: Record<string, Space> = {};
   private closedSpaces: Record<string, Space> = {};
-  
+
   // Fast lookup: windowId -> permanentId (rebuilt on sync)
   private windowToSpaceMap = new Map<number, string>();
-  
+
   private initialized = false;
   private initializationPromise: Promise<void> | null = null;
   private updateLock = new Map<string, Promise<void>>();
@@ -34,19 +45,19 @@ export class StateManager implements IStateManager {
   // Map: permanentId -> { windowId, restoredAt, originalName }
   private recentlyRestoredSpaces = new Map<string, { windowId: number; restoredAt: number; originalName: string }>();
 
-  // Cache configuration
-  private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  private static readonly INCREMENTAL_UPDATE_THRESHOLD = 10; // Number of changes before full sync
+  // Synchronization coordination to prevent concurrent sync operations
+  private syncInProgress = false;
+  private pendingSyncRequest = false;
+
+  // Cache state
   private stateCache: Map<string, StateCache> = new Map();
   private changeCounter: Map<string, number> = new Map();
 
-  // Debounced broadcast configuration
-  private broadcastDebounceTime = 100; // ms
+  // Debounced broadcast state
   private broadcastTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private pendingBroadcastData: any = null;
+  private pendingBroadcastData: unknown = null;
   private lastBroadcastTime = 0;
-  private broadcastQueue: Array<{ timestamp: number; data: any }> = [];
-  private maxBroadcastQueue = 50; // Maximum queued broadcasts
+  private broadcastQueue: Array<{ timestamp: number; data: unknown }> = [];
 
   constructor(
     private windowManager: WindowManager,
@@ -82,7 +93,7 @@ export class StateManager implements IStateManager {
     const cached = this.stateCache.get(key);
     const now = Date.now();
 
-    if (cached && now - cached.timestamp < StateManager.CACHE_TTL) {
+    if (cached && now - cached.timestamp < StateManager.CONFIG.CACHE_TTL_MS) {
       return cached.data as T;
     }
 
@@ -357,10 +368,19 @@ export class StateManager implements IStateManager {
 
   /**
    * Acquire a lock for a specific space ID to prevent race conditions
+   * @param spaceId - The space ID to lock
+   * @param timeoutMs - Maximum time to wait for lock acquisition (default: CONFIG.LOCK_TIMEOUT_MS)
+   * @throws Error if lock acquisition times out
    */
-  private async acquireLock(spaceId: string): Promise<void> {
-    // Wait for any existing lock to be released
+  private async acquireLock(spaceId: string, timeoutMs = StateManager.CONFIG.LOCK_TIMEOUT_MS): Promise<void> {
+    const startTime = Date.now();
+
+    // Wait for any existing lock to be released, with timeout
     while (this.updateLock.has(spaceId)) {
+      if (Date.now() - startTime > timeoutMs) {
+        console.error(`[StateManager] Lock acquisition timeout for space ${spaceId}`);
+        throw new Error(`Lock acquisition timeout for space ${spaceId}`);
+      }
       await this.updateLock.get(spaceId);
     }
 
@@ -465,7 +485,7 @@ export class StateManager implements IStateManager {
       if (cachedState) {
         // Check if we should send incremental update
         const changeCount = this.changeCounter.get(spacesCacheKey) || 0;
-        if (changeCount < StateManager.INCREMENTAL_UPDATE_THRESHOLD) {
+        if (changeCount < StateManager.CONFIG.INCREMENTAL_UPDATE_THRESHOLD) {
           const diff = this.createIncrementalUpdate(cachedState.data, currentState);
           if (diff) {
             payload = {
@@ -627,14 +647,41 @@ export class StateManager implements IStateManager {
 
     // Simple validation: check if at least 50% of URLs match
     // This handles cases where some tabs might have changed
-    const matchingUrls = currentUrls.filter(url => spaceUrls.includes(url));
+    // Use Set for O(1) lookups instead of O(n) array includes
+    const spaceUrlSet = new Set(spaceUrls);
+    const matchingUrls = currentUrls.filter(url => spaceUrlSet.has(url));
     const matchPercentage = matchingUrls.length / Math.max(currentUrls.length, spaceUrls.length);
 
-    return matchPercentage >= 0.5;
+    return matchPercentage >= StateManager.CONFIG.URL_MATCH_THRESHOLD;
   }
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 3000)
   async synchronizeWindowsAndSpaces(): Promise<void> {
+    // Prevent concurrent synchronization - queue subsequent requests
+    if (this.syncInProgress) {
+      console.log('[StateManager] Sync already in progress, queuing request');
+      this.pendingSyncRequest = true;
+      return;
+    }
+
+    this.syncInProgress = true;
+    try {
+      await this.performSynchronization();
+    } finally {
+      this.syncInProgress = false;
+      // Process any pending sync request that came in during execution
+      if (this.pendingSyncRequest) {
+        this.pendingSyncRequest = false;
+        console.log('[StateManager] Processing pending sync request');
+        await this.synchronizeWindowsAndSpaces();
+      }
+    }
+  }
+
+  /**
+   * Internal synchronization logic - called by synchronizeWindowsAndSpaces
+   */
+  private async performSynchronization(): Promise<void> {
     const windows = await this.windowManager.getAllWindows();
     const now = Date.now();
 
@@ -657,14 +704,14 @@ export class StateManager implements IStateManager {
 
     // Track which permanentIds are currently active (have open windows)
     const activePermIds = new Set<string>();
-    
+
     // Clear old window mapping - we'll rebuild it
     this.windowToSpaceMap.clear();
 
     // =========================================================================
     // PHASE 1: Match windows to existing spaces
     // =========================================================================
-    
+
     // First pass: collect all unmatched spaces for URL-based matching
     const unmatchedSpaces = new Map<string, Space>();
     for (const [permId, space] of Object.entries(this.spaces)) {
@@ -687,6 +734,8 @@ export class StateManager implements IStateManager {
       // Get window's current tabs for matching
       const tabs = await this.tabManager.getTabs(window.id);
       const windowUrls = tabs.map(tab => this.tabManager.getTabUrl(tab)).filter(url => url && url.length > 0);
+      // Create Set for O(1) lookups
+      const windowUrlSet = new Set(windowUrls);
 
       let matchedSpace: Space | null = null;
       let matchSource = '';
@@ -704,21 +753,22 @@ export class StateManager implements IStateManager {
       // Strategy 2: URL-based matching (for stale spaces after restart)
       if (!matchedSpace && windowUrls.length > 0) {
         let bestMatch: { permId: string; space: Space; score: number } | null = null;
-        
+
         for (const [permId, space] of unmatchedSpaces) {
           const spaceUrls = (space.urls || []).filter(url => url && url.length > 0);
           if (spaceUrls.length === 0) continue;
-          
-          const matchingUrls = windowUrls.filter(url => spaceUrls.includes(url));
+
+          // Use Set for O(1) lookups instead of O(n) array includes
+          const matchingUrls = spaceUrls.filter(url => windowUrlSet.has(url));
           const score = matchingUrls.length / Math.max(windowUrls.length, spaceUrls.length);
-          
-          // Use lower threshold (0.3) for named spaces, higher (0.5) for unnamed
-          const threshold = space.named ? 0.3 : 0.5;
+
+          // Use lower threshold (0.3) for named spaces, higher for unnamed
+          const threshold = space.named ? 0.3 : StateManager.CONFIG.URL_MATCH_THRESHOLD;
           if (score >= threshold && (!bestMatch || score > bestMatch.score)) {
             bestMatch = { permId, space, score };
           }
         }
-        
+
         if (bestMatch) {
           matchedSpace = bestMatch.space;
           matchSource = `URL (${(bestMatch.score * 100).toFixed(0)}%)`;
@@ -729,7 +779,7 @@ export class StateManager implements IStateManager {
       if (matchedSpace) {
         // Update existing space with current window state
         console.log(`[StateManager] 🔗 Window ${window.id} matched to space "${matchedSpace.name}" via ${matchSource}`);
-        
+
         const permId = matchedSpace.permanentId;
         activePermIds.add(permId);
         this.windowToSpaceMap.set(window.id, permId);
@@ -785,7 +835,7 @@ export class StateManager implements IStateManager {
     // =========================================================================
     // PHASE 2: Handle orphaned spaces (no matching window)
     // =========================================================================
-    
+
     for (const [permId, space] of Object.entries(this.spaces)) {
       if (!activePermIds.has(permId)) {
         if (space.named) {
@@ -838,6 +888,10 @@ export class StateManager implements IStateManager {
 
       if (!trimmedName) {
         throw new Error('Space name cannot be empty');
+      }
+
+      if (trimmedName.length > StateManager.CONFIG.MAX_SPACE_NAME_LENGTH) {
+        throw new Error(`Space name exceeds maximum length of ${StateManager.CONFIG.MAX_SPACE_NAME_LENGTH}`);
       }
 
       // Ensure state is initialized and synchronized
@@ -1033,7 +1087,7 @@ export class StateManager implements IStateManager {
       console.log(`[StateManager] Space is unnamed - discarding without saving to closedSpaces`);
       delete this.spaces[permId];
       // Delete active tabs for this space
-      await (this.storageManager as any).deleteTabsForSpace(permId, 'active');
+      await this.storageManager.deleteTabsForSpace(permId, 'active');
       // Save updated spaces (with unnamed space removed)
       await this.storageManager.saveSpaces(this.spaces);
       return;
@@ -1074,7 +1128,7 @@ export class StateManager implements IStateManager {
 
     // Persist tabs for the closed space and update stores atomically-ish
     await Promise.all([
-      (this.storageManager as any).saveTabsForSpace(
+      this.storageManager.saveTabsForSpace(
         permId,
         'closed',
         urls.map((url, index) => ({
@@ -1086,7 +1140,7 @@ export class StateManager implements IStateManager {
           createdAt: Date.now()
         }))
       ),
-      (this.storageManager as any).deleteTabsForSpace(permId, 'active'),
+      this.storageManager.deleteTabsForSpace(permId, 'active'),
       this.storageManager.saveSpaces(this.spaces),
       this.storageManager.saveClosedSpaces(this.closedSpaces)
     ]);
@@ -1141,7 +1195,7 @@ export class StateManager implements IStateManager {
       // If restoring from closed, reconstruct URLs from tabs store
       let urls = space.urls || [];
       if (fromClosedSpaces) {
-        const closedTabs = await (this.storageManager as any).loadTabsForSpace(permId, 'closed');
+        const closedTabs = await this.storageManager.loadTabsForSpace(permId, 'closed');
         if (closedTabs && closedTabs.length) {
           urls = closedTabs
             .sort((a: any, b: any) => (a.index ?? 0) - (b.index ?? 0))
@@ -1179,13 +1233,13 @@ export class StateManager implements IStateManager {
 
       // Handle tab storage
       if (fromClosedSpaces) {
-        const closedTabs = await (this.storageManager as any).loadTabsForSpace(permId, 'closed');
+        const closedTabs = await this.storageManager.loadTabsForSpace(permId, 'closed');
         if (closedTabs && closedTabs.length) {
           await Promise.all([
-            (this.storageManager as any).saveTabsForSpace(
+            this.storageManager.saveTabsForSpace(
               permId,
               'active',
-              (closedTabs || []).map((t: any, idx: number) => ({
+              closedTabs.map((t, idx) => ({
                 id: generateUUID('tab'),
                 spaceId: permId,
                 kind: 'active',
@@ -1194,7 +1248,7 @@ export class StateManager implements IStateManager {
                 createdAt: Date.now()
               }))
             ),
-            (this.storageManager as any).deleteTabsForSpace(permId, 'closed')
+            this.storageManager.deleteTabsForSpace(permId, 'closed')
           ]);
         }
       }
@@ -1240,7 +1294,7 @@ export class StateManager implements IStateManager {
 
     delete this.closedSpaces[spaceId];
     await this.storageManager.saveClosedSpaces(this.closedSpaces);
-    await (this.storageManager as any).deleteTabsForSpace(spaceId, 'closed');
+    await this.storageManager.deleteTabsForSpace(spaceId, 'closed');
     this.broadcastStateUpdate();
   }
 
@@ -1287,16 +1341,16 @@ export class StateManager implements IStateManager {
       updatedSpaces[newSpaceId] = updatedSpace;
 
       // Update permanent ID mapping
-      await (this.storageManager as any).updatePermanentIdMapping(newWindowId, space.permanentId);
+      await this.storageManager.updatePermanentIdMapping(newWindowId, space.permanentId);
 
       // Move tabs to new active id
-      const closedTabs = await (this.storageManager as any).loadTabsForSpace(oldSpaceId, 'closed');
+      const closedTabs = await this.storageManager.loadTabsForSpace(oldSpaceId, 'closed');
       if (closedTabs?.length) {
         await Promise.all([
-          (this.storageManager as any).saveTabsForSpace(
+          this.storageManager.saveTabsForSpace(
             newSpaceId,
             'active',
-            closedTabs.map((t: any, idx: number) => ({
+            closedTabs.map((t, idx) => ({
               id: generateUUID('tab'),
               spaceId: newSpaceId,
               kind: 'active',
@@ -1305,7 +1359,7 @@ export class StateManager implements IStateManager {
               createdAt: Date.now()
             }))
           ),
-          (this.storageManager as any).deleteTabsForSpace(oldSpaceId, 'closed')
+          this.storageManager.deleteTabsForSpace(oldSpaceId, 'closed')
         ]);
       }
 

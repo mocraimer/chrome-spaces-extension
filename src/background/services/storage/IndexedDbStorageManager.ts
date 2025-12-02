@@ -62,8 +62,9 @@ export class IndexedDbStorageManager implements IStorageManager {
 
       await tx.objectStore('meta').put({ key: 'lastModified', value: Date.now() });
       await tx.done;
-    } catch {
-      // Ignore bootstrap failures; proceed empty (fast path)
+    } catch (error) {
+      console.error('[IndexedDbStorageManager] Bootstrap migration failed:', error);
+      // Proceed with empty state rather than blocking extension startup
     } finally {
       this.bootstrapped = true;
     }

@@ -38,10 +38,9 @@ export class RestoreSpaceTransaction {
     this.stateChangeHandlers.forEach(handler => handler(newState));
   }
 
-  private handleError(error: Error) {
+  private notifyError(error: Error): void {
     this.setState('FAILED');
     this.errorHandlers.forEach(handler => handler(error));
-    throw error;
   }
 
   async restore(spaceId: string): Promise<void> {
@@ -68,8 +67,8 @@ export class RestoreSpaceTransaction {
         this.setState('COMPLETED');
         resolve();
       } catch (error) {
+        this.notifyError(error as Error);
         reject(error as Error);
-        this.handleError(error as Error);
       } finally {
         this.activeRestoration = null;
         this.restorationQueue.shift();
