@@ -174,6 +174,81 @@ export class StateManager implements IStateManager {
   }
 
   // ============================================================================
+  // CONSISTENCY VERIFICATION
+  // ============================================================================
+
+  private lastConsistencyCheckTime = 0;
+  private static readonly CONSISTENCY_CHECK_INTERVAL_MS = 5000;
+
+  /**
+   * Computes a deterministic hash from space state for consistency comparison
+   */
+  private computeStateHash(spaces: Record<string, Space>, closed: Record<string, Space>): string {
+    const combined = [
+      ...Object.entries(spaces).map(([id, s]) => `${id}:${s.name}:${s.version}:${s.named}`),
+      ...Object.entries(closed).map(([id, s]) => `closed:${id}:${s.name}:${s.version}:${s.named}`)
+    ].sort().join('|');
+    return combined;
+  }
+
+  /**
+   * Verifies consistency between in-memory state and IndexedDB
+   * Returns true if consistent, logs detailed mismatch info if not
+   */
+  async verifyConsistency(): Promise<boolean> {
+    console.log('[StateManager] 🔍 Verifying state consistency...');
+
+    try {
+      const storedSpaces = await this.storageManager.loadSpaces();
+      const storedClosed = await this.storageManager.loadClosedSpaces();
+
+      const memHash = this.computeStateHash(this.spaces, this.closedSpaces);
+      const diskHash = this.computeStateHash(storedSpaces, storedClosed);
+
+      if (memHash !== diskHash) {
+        // Find specific mismatches
+        const memSpaceIds = new Set(Object.keys(this.spaces));
+        const diskSpaceIds = new Set(Object.keys(storedSpaces));
+
+        const missingInMemory = [...diskSpaceIds].filter(id => !memSpaceIds.has(id));
+        const missingOnDisk = [...memSpaceIds].filter(id => !diskSpaceIds.has(id));
+
+        const versionMismatches: string[] = [];
+        const nameMismatches: string[] = [];
+
+        for (const id of memSpaceIds) {
+          if (diskSpaceIds.has(id)) {
+            const memSpace = this.spaces[id];
+            const diskSpace = storedSpaces[id];
+            if (memSpace.version !== diskSpace.version) {
+              versionMismatches.push(`${id}: mem=${memSpace.version} disk=${diskSpace.version}`);
+            }
+            if (memSpace.name !== diskSpace.name) {
+              nameMismatches.push(`${id}: mem="${memSpace.name}" disk="${diskSpace.name}"`);
+            }
+          }
+        }
+
+        console.error('[StateManager] 🔴 STATE MISMATCH DETECTED', {
+          missingInMemory,
+          missingOnDisk,
+          versionMismatches,
+          nameMismatches,
+          memorySpaceCount: memSpaceIds.size,
+          diskSpaceCount: diskSpaceIds.size
+        });
+        return false;
+      }
+
+      console.log('[StateManager] ✅ State consistency verified - memory and storage match');
+      return true;
+    } catch (error) {
+      console.error('[StateManager] ❌ Error during consistency verification:', error);
+      return false;
+    }
+  }
+
+  // ============================================================================
 
   @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   async initialize(): Promise<void> {

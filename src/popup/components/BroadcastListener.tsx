@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
-import { fetchSpaces } from '../store/slices/spacesSlice';
+import { fetchSpaces, cleanupStaleOptimisticUpdates } from '../store/slices/spacesSlice';
 import { MessageTypes } from '@/shared/constants';
 import { store } from '../store';
 
@@ -20,6 +20,8 @@ export const BroadcastListener: React.FC = () => {
       if (message.type === MessageTypes.SPACES_UPDATED ||
           message.type === MessageTypes.SPACE_UPDATED ||
           message.type === MessageTypes.STATE_CHANGED) {
+        // Clean up any stale optimistic updates before fetching new state
+        dispatch(cleanupStaleOptimisticUpdates());
         // Refresh spaces data when state changes
         dispatch(fetchSpaces());
       }

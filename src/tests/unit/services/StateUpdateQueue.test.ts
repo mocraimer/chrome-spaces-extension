@@ -49,11 +49,13 @@ describe('StateUpdateQueue', () => {
   });
 
   describe('processQueue', () => {
-    it('should process updates in priority order', async () => {
+    it('should process batched updates in priority order (NORMAL and LOW only)', async () => {
+      // Note: HIGH and CRITICAL priorities bypass batching and are processed immediately
+      // This test verifies priority ordering for updates that go through the batch mechanism
       const updates = [
-        { id: '1', type: 'TEST', payload: 'low', priority: 4 },     // LOW = 4
-        { id: '2', type: 'TEST', payload: 'high', priority: 2 },    // HIGH = 2
-        { id: '3', type: 'TEST', payload: 'medium', priority: 3 }   // NORMAL = 3
+        { id: '1', type: 'TEST', payload: 'low', priority: 4 },       // LOW = 4 (batched)
+        { id: '2', type: 'TEST', payload: 'normal', priority: 3 },    // NORMAL = 3 (batched)
+        { id: '3', type: 'TEST', payload: 'normal2', priority: 3 }    // NORMAL = 3 (batched)
       ];
 
       const processedUpdates: QueuedStateUpdate[] = [];
@@ -69,13 +71,35 @@ describe('StateUpdateQueue', () => {
       for (const update of updates) {
         await queue.enqueue(update);
       }
-      
+
       await queue.processQueue();
       mockProcessUpdates.mockRestore();
 
-      expect(processedUpdates[0].id).toBe('2'); // HIGH priority (2)
+      // NORMAL priority updates should come before LOW
+      expect(processedUpdates[0].id).toBe('2'); // NORMAL priority (3)
       expect(processedUpdates[1].id).toBe('3'); // NORMAL priority (3)
       expect(processedUpdates[2].id).toBe('1'); // LOW priority (4)
+    });
+
+    it('should process HIGH priority updates immediately (bypass batching)', async () => {
+      const processedUpdates: QueuedStateUpdate[] = [];
+      const processUpdatesFn = (updates: QueuedStateUpdate[]) => {
+        processedUpdates.push(...updates);
+        return Promise.resolve();
+      };
+
+      const mockProcessUpdates = jest
+        .spyOn(queue as any, 'processUpdates')
+        .mockImplementation(processUpdatesFn as any);
+
+      // HIGH priority should be processed immediately, not batched
+      await queue.enqueue({ id: '1', type: 'TEST', payload: 'high', priority: 2 });
+
+      mockProcessUpdates.mockRestore();
+
+      // HIGH priority updates are processed immediately
+      expect(processedUpdates.length).toBe(1);
+      expect(processedUpdates[0].id).toBe('1');
     });
 
     it('should handle errors and rollback', async () => {

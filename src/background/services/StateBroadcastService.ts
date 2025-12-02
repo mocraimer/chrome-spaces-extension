@@ -110,11 +110,13 @@ export class StateBroadcastService {
    */
   public broadcast(update: QueuedStateUpdate): void {
     const isCritical = update.priority === StateUpdatePriority.CRITICAL;
+    const isHighPriority = update.priority === StateUpdatePriority.HIGH;
     const isSpaceNameUpdate = update.type === MessageTypes.SPACE_UPDATED &&
                               update.payload?.changes?.name;
 
-    if (isCritical || isSpaceNameUpdate) {
-      // Process critical updates and space name updates immediately
+    if (isCritical || isHighPriority || isSpaceNameUpdate) {
+      // Process critical/high priority updates and space name updates immediately
+      // HIGH priority bypasses debounce for user-initiated actions like renaming
       // This prevents space title reversion due to debounce race conditions
       this.handleStateUpdate(update, -1);
       return;

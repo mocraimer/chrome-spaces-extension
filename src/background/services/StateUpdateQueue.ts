@@ -127,9 +127,12 @@ export class StateUpdateQueue {
         this.validateUpdate(queuedUpdate);
       }
 
-      // Handle critical updates immediately
-      if (queuedUpdate.priority === StateUpdatePriority.CRITICAL) {
-        await this.processCriticalUpdate(queuedUpdate);
+      // Handle critical and high priority updates immediately (bypass debounce)
+      // HIGH priority is used for user-initiated actions like space name changes
+      // that need immediate feedback without debounce delays
+      if (queuedUpdate.priority === StateUpdatePriority.CRITICAL ||
+          queuedUpdate.priority === StateUpdatePriority.HIGH) {
+        await this.processImmediateUpdate(queuedUpdate);
         return;
       }
 
@@ -267,9 +270,10 @@ export class StateUpdateQueue {
    * Processes updates atomically
    */
   /**
-   * Processes a critical update immediately
+   * Processes a high-priority update immediately (bypasses debounce)
+   * Used for CRITICAL and HIGH priority updates that require immediate processing
    */
-  private async processCriticalUpdate(update: QueuedStateUpdate): Promise<void> {
+  private async processImmediateUpdate(update: QueuedStateUpdate): Promise<void> {
     this.queue.push(update);
     await this.processQueue();
   }

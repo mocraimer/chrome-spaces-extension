@@ -8,11 +8,25 @@ import {
   FetchSpacesResponse,
   isAsyncAction,
   OptimisticUpdate,
-  ActionQueue
+  ActionQueue,
+  AppDispatch,
+  RootState
 } from '../types';
 
-// Message timeout configuration (10 seconds allows for service worker initialization)
-const MESSAGE_TIMEOUT = 10000;
+// Message timeout configuration (15 seconds allows for service worker initialization)
+const MESSAGE_TIMEOUT = 15000;
+
+// Retry configuration for fetchSpaces
+const MAX_RETRIES = 3;
+
+// Optimistic update timeout configuration (5 seconds)
+const OPTIMISTIC_UPDATE_TIMEOUT = 5000;
+
+// Stale optimistic update threshold (10 seconds)
+const STALE_OPTIMISTIC_UPDATE_THRESHOLD = 10000;
+
+// Store timeout IDs externally (cannot be in Redux state)
+const optimisticUpdateTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
 // Initial state
 const initialState: SpacesState = {
@@ -52,6 +66,7 @@ export const ADD_TO_ACTION_QUEUE = 'spaces/addToActionQueue';
 export const REMOVE_FROM_ACTION_QUEUE = 'spaces/removeFromActionQueue';
 export const SET_OPERATION_ERROR = 'spaces/setOperationError';
 export const CLEAR_OPERATION_ERROR = 'spaces/clearOperationError';
+export const CLEANUP_STALE_OPTIMISTIC_UPDATES = 'spaces/cleanupStaleOptimisticUpdates';
 
 export const setSearch = createAction<string>(SET_SEARCH);
 export const toggleEditMode = createAction(TOGGLE_EDIT_MODE);
@@ -63,6 +78,145 @@ export const addToActionQueue = createAction<ActionQueue>(ADD_TO_ACTION_QUEUE);
 export const removeFromActionQueue = createAction<string>(REMOVE_FROM_ACTION_QUEUE);
 export const setOperationError = createAction<{ id: string; error: string }>(SET_OPERATION_ERROR);
 export const clearOperationError = createAction<string>(CLEAR_OPERATION_ERROR);
+const cleanupStaleOptimisticUpdatesAction = createAction(CLEANUP_STALE_OPTIMISTIC_UPDATES);
+
+/**
+ * Clears the timeout for an optimistic update.
+ * Should be called when confirming or rolling back an update.
+ */
+export function clearOptimisticUpdateTimeout(updateId: string): void {
+  const timeoutId = optimisticUpdateTimeouts.get(updateId);
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    optimisticUpdateTimeouts.delete(updateId);
+  }
+}
+
+/**
+ * Thunk action creator that adds an optimistic update with timeout protection.
+ * Automatically rolls back the update after OPTIMISTIC_UPDATE_TIMEOUT if not confirmed.
+ */
+export const addOptimisticUpdateWithTimeout = (update: OptimisticUpdate) => {
+  return (dispatch: AppDispatch) => {
+    // Clear any existing timeout for this update ID
+    clearOptimisticUpdateTimeout(update.id);
+
+    // Add the optimistic update
+    dispatch(addOptimisticUpdate(update));
+
+    // Set up auto-rollback timeout
+    const timeoutId = setTimeout(() => {
+      optimisticUpdateTimeouts.delete(update.id);
+
+      // Dispatch rollback with error message
+      dispatch(rollbackOptimisticUpdate(update.id));
+
+      // Set user-visible error based on operation type
+      const errorMessage = getTimeoutErrorMessage(update.type);
+      dispatch(setOperationError({ id: update.id, error: errorMessage }));
+
+      console.warn(`[Optimistic Update] Timeout: ${update.type} operation for ${update.id} timed out after ${OPTIMISTIC_UPDATE_TIMEOUT}ms`);
+    }, OPTIMISTIC_UPDATE_TIMEOUT);
+
+    optimisticUpdateTimeouts.set(update.id, timeoutId);
+  };
+};
+
+/**
+ * Thunk action creator that removes an optimistic update and clears its timeout.
+ * Use this when the operation succeeds.
+ */
+export const confirmOptimisticUpdate = (updateId: string) => {
+  return (dispatch: AppDispatch) => {
+    clearOptimisticUpdateTimeout(updateId);
+    dispatch(removeOptimisticUpdate(updateId));
+  };
+};
+
+/**
+ * Thunk action creator that rolls back an optimistic update with an error message.
+ * Use this when the operation fails.
+ */
+export const rollbackOptimisticUpdateWithError = (updateId: string, errorMessage?: string) => {
+  return (dispatch: AppDispatch, getState: () => RootState) => {
+    clearOptimisticUpdateTimeout(updateId);
+
+    const state = getState();
+    const update = state.spaces.optimisticUpdates[updateId];
+
+    dispatch(rollbackOptimisticUpdate(updateId));
+
+    // Set user-visible error
+    const message = errorMessage || getFailureErrorMessage(update?.type);
+    dispatch(setOperationError({ id: updateId, error: message }));
+  };
+};
+
+/**
+ * Thunk action creator that cleans up stale optimistic updates.
+ * Should be called during state reconciliation (when new state arrives from background).
+ */
+export const cleanupStaleOptimisticUpdates = () => {
+  return (dispatch: AppDispatch, getState: () => RootState) => {
+    const state = getState();
+    const now = Date.now();
+    const staleUpdateIds: string[] = [];
+
+    // Find stale optimistic updates
+    Object.entries(state.spaces.optimisticUpdates).forEach(([id, update]) => {
+      if (now - update.timestamp > STALE_OPTIMISTIC_UPDATE_THRESHOLD) {
+        staleUpdateIds.push(id);
+      }
+    });
+
+    // Clean up each stale update
+    staleUpdateIds.forEach(id => {
+      clearOptimisticUpdateTimeout(id);
+      dispatch(rollbackOptimisticUpdate(id));
+      console.warn(`[Optimistic Update] Cleaned up stale update: ${id}`);
+    });
+
+    if (staleUpdateIds.length > 0) {
+      dispatch(cleanupStaleOptimisticUpdatesAction());
+    }
+  };
+};
+
+/**
+ * Get error message for timeout based on operation type.
+ */
+function getTimeoutErrorMessage(type?: OptimisticUpdate['type']): string {
+  switch (type) {
+    case 'rename':
+      return 'Failed to rename space: operation timed out. Changes reverted.';
+    case 'close':
+      return 'Failed to close space: operation timed out. Changes reverted.';
+    case 'restore':
+      return 'Failed to restore space: operation timed out. Changes reverted.';
+    case 'remove':
+      return 'Failed to remove space: operation timed out. Changes reverted.';
+    default:
+      return 'Operation timed out. Changes reverted.';
+  }
+}
+
+/**
+ * Get error message for failure based on operation type.
+ */
+function getFailureErrorMessage(type?: OptimisticUpdate['type']): string {
+  switch (type) {
+    case 'rename':
+      return 'Failed to rename space. Changes reverted.';
+    case 'close':
+      return 'Failed to close space. Changes reverted.';
+    case 'restore':
+      return 'Failed to restore space. Changes reverted.';
+    case 'remove':
+      return 'Failed to remove space. Changes reverted.';
+    default:
+      return 'Operation failed. Changes reverted.';
+  }
+}
 
 // Sync Action Creators
 export const setCurrentWindow = createAction<string>(SET_CURRENT_WINDOW);
@@ -73,28 +227,49 @@ export const clearError = createAction(CLEAR_ERROR);
 export const fetchSpaces = createAsyncAction(
   FETCH_SPACES,
   async () => {
-    // Create a timeout promise that rejects after MESSAGE_TIMEOUT
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error('Message timeout: background service did not respond within 10 seconds')),
-        MESSAGE_TIMEOUT
-      )
-    );
+    // Retry loop with exponential backoff (1s, 2s, 3s)
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      // Create a timeout promise that rejects after MESSAGE_TIMEOUT
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Message timeout: background service did not respond within ${MESSAGE_TIMEOUT / 1000} seconds`)),
+          MESSAGE_TIMEOUT
+        )
+      );
 
-    try {
-      // Race between the actual message and the timeout
-      const response = await Promise.race([
-        chrome.runtime.sendMessage({
-          action: ActionTypes.GET_ALL_SPACES
-        }),
-        timeoutPromise
-      ]);
-      return response as FetchSpacesResponse;
-    } catch (error) {
-      // Log the error for debugging
-      console.error('[fetchSpaces] Error fetching spaces:', error instanceof Error ? error.message : String(error));
-      throw error;
+      try {
+        console.log(`[fetchSpaces] Attempt ${attempt} of ${MAX_RETRIES}`);
+
+        // Race between the actual message and the timeout
+        const response = await Promise.race([
+          chrome.runtime.sendMessage({
+            action: ActionTypes.GET_ALL_SPACES
+          }),
+          timeoutPromise
+        ]);
+
+        console.log(`[fetchSpaces] Success on attempt ${attempt}`);
+        return response as FetchSpacesResponse;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`[fetchSpaces] Attempt ${attempt} failed:`, errorMessage);
+
+        // If this was the last attempt, throw the error
+        if (attempt === MAX_RETRIES) {
+          console.error(`[fetchSpaces] All ${MAX_RETRIES} attempts exhausted, giving up`);
+          throw error;
+        }
+
+        // Wait with exponential backoff before retrying (1s, 2s, 3s)
+        const backoffMs = 1000 * attempt;
+        console.log(`[fetchSpaces] Retrying in ${backoffMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
     }
+
+    // This should never be reached due to the throw in the loop,
+    // but TypeScript needs it for type safety
+    throw new Error('fetchSpaces: unexpected end of retry loop');
   }
 );
 
