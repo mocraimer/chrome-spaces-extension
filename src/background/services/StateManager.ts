@@ -816,10 +816,12 @@ export class StateManager implements IStateManager {
       let matchSource = '';
 
       // Strategy 1: Check if any space already claims this windowId
+      // Also check sourceWindowId as fallback (preserved after service worker wake-up when windowId is reset)
       for (const [permId, space] of unmatchedSpaces) {
-        if (space.windowId === window.id) {
+        if (space.windowId === window.id ||
+            (space.sourceWindowId && space.sourceWindowId === window.id.toString())) {
           matchedSpace = space;
-          matchSource = 'windowId';
+          matchSource = space.windowId === window.id ? 'windowId' : 'sourceWindowId';
           unmatchedSpaces.delete(permId);
           break;
         }
@@ -864,6 +866,7 @@ export class StateManager implements IStateManager {
           id: permId, // Use permanentId as id
           urls: windowUrls.length > 0 ? windowUrls : matchedSpace.urls,
           windowId: window.id,
+          sourceWindowId: window.id.toString(),
           isActive: true,
           lastModified: now,
           lastSync: now,
@@ -893,6 +896,7 @@ export class StateManager implements IStateManager {
           urls: windowUrls,
           named: false,
           windowId: window.id,
+          sourceWindowId: window.id.toString(),
           isActive: true,
           createdAt: now,
           lastModified: now,
@@ -1114,6 +1118,7 @@ export class StateManager implements IStateManager {
         urls,
         named,
         windowId,
+        sourceWindowId: windowId.toString(),
         isActive: true,
         createdAt: now,
         lastModified: now,
