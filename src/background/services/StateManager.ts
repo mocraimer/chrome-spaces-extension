@@ -1374,67 +1374,78 @@ export class StateManager implements IStateManager {
   }
 
   /**
-   * Re-keys a space from an old ID to a new ID (typically a new window ID after restoration)
-   * This is crucial for space restoration when window IDs change after browser restart
+   * Activates a closed/inactive space by associating it with a new window.
+   * Uses permanentId as the stable key (NOT windowId) to maintain consistency
+   * with the rest of the state management system.
+   *
+   * CRITICAL: This function was previously called "rekeySpace" and used windowId as key,
+   * which caused state corruption. The permanentId architecture requires spaces to be
+   * keyed by permanentId, with windowId only used for the windowToSpaceMap lookup.
    */
   async rekeySpace(oldSpaceId: string, newWindowId: number): Promise<void> {
-    const newSpaceId = newWindowId.toString();
+    // Use permanentId as the key - this is the stable identifier
+    // The oldSpaceId IS the permanentId in the new architecture
+    const permanentId = oldSpaceId;
 
-    // Lock both IDs to prevent race conditions
-    await this.acquireLock(oldSpaceId);
-    await this.acquireLock(newSpaceId);
+    await this.acquireLock(permanentId);
 
     try {
       // Get the space from either active or closed spaces
-      const space = this.spaces[oldSpaceId] || this.closedSpaces[oldSpaceId];
+      const space = this.spaces[permanentId] || this.closedSpaces[permanentId];
 
       if (!space) {
-        throw new Error(`Space not found with ID: ${oldSpaceId}`);
+        throw new Error(`Space not found with permanentId: ${permanentId}`);
       }
 
-      console.log(`[StateManager] Re-keying space from ${oldSpaceId} to ${newSpaceId}`);
-      console.log(`[StateManager] Space being re-keyed: name="${space.name}", named=${space.named}`);
+      console.log(`[StateManager] Activating space ${permanentId} with window ${newWindowId}`);
+      console.log(`[StateManager] Space being activated: name="${space.name}", named=${space.named}, permanentId=${space.permanentId}`);
 
-      // Create updated space with new IDs
+      // Create updated space - keep permanentId as the id (stable key!)
       const updatedSpace = preserveSpaceIdentity(space, {
-        id: newSpaceId,
-        sourceWindowId: newSpaceId,
+        id: permanentId,  // Keep permanentId as id - NOT windowId!
+        sourceWindowId: newWindowId.toString(),
         windowId: newWindowId,
         isActive: true
       });
 
       console.log(`[StateManager] After preserveSpaceIdentity: name="${updatedSpace.name}", named=${updatedSpace.named}`);
 
-      // Remove from old location
+      // Update spaces - remove from closedSpaces, add to spaces (same permanentId key)
       const updatedSpaces = { ...this.spaces };
       const updatedClosedSpaces = { ...this.closedSpaces };
 
-      delete updatedSpaces[oldSpaceId];
-      delete updatedClosedSpaces[oldSpaceId];
+      // Remove from closedSpaces if it was there
+      delete updatedClosedSpaces[permanentId];
 
-      // Add to new location in active spaces
-      updatedSpaces[newSpaceId] = updatedSpace;
+      // Also clean up any stale entry in spaces (shouldn't exist but be safe)
+      delete updatedSpaces[permanentId];
 
-      // Update permanent ID mapping
+      // Add to active spaces with permanentId as key
+      updatedSpaces[permanentId] = updatedSpace;
+
+      // Update window-to-space mapping
+      this.windowToSpaceMap.set(newWindowId, permanentId);
+
+      // Update permanent ID mapping in storage
       await this.storageManager.updatePermanentIdMapping(newWindowId, space.permanentId);
 
-      // Move tabs to new active id
-      const closedTabs = await this.storageManager.loadTabsForSpace(oldSpaceId, 'closed');
+      // Move tabs from closed to active
+      const closedTabs = await this.storageManager.loadTabsForSpace(permanentId, 'closed');
       if (closedTabs?.length) {
         await Promise.all([
           this.storageManager.saveTabsForSpace(
-            newSpaceId,
+            permanentId,
             'active',
             closedTabs.map((t, idx) => ({
               id: generateUUID('tab'),
-              spaceId: newSpaceId,
+              spaceId: permanentId,
               kind: 'active',
               url: t.url,
               index: idx,
               createdAt: Date.now()
             }))
           ),
-          this.storageManager.deleteTabsForSpace(oldSpaceId, 'closed')
+          this.storageManager.deleteTabsForSpace(permanentId, 'closed')
         ]);
       }
 
@@ -1448,26 +1459,24 @@ export class StateManager implements IStateManager {
       this.spaces = updatedSpaces;
       this.closedSpaces = updatedClosedSpaces;
 
-      // CRITICAL: Mark space as recently restored to protect from premature validation
+      // CRITICAL: Mark space as recently restored using permanentId (not windowId!)
       // This gate prevents synchronization from destroying the restored space before tabs load
-      this.markSpaceAsRestored(newSpaceId, newWindowId, space.name);
+      this.markSpaceAsRestored(permanentId, newWindowId, space.name);
 
       // Invalidate caches
-      this.invalidateCache(`space:${oldSpaceId}`);
-      this.invalidateCache(`space:${newSpaceId}`);
+      this.invalidateCache(`space:${permanentId}`);
       this.invalidateCache('spaces');
       this.invalidateCache('closedSpaces');
 
       this.broadcastStateUpdate();
 
-      console.log(`[StateManager] ✅ Successfully re-keyed space ${oldSpaceId} → ${newSpaceId}`);
+      console.log(`[StateManager] ✅ Successfully activated space ${permanentId} with window ${newWindowId}`);
     } catch (error) {
-      const errorMessage = `Failed to re-key space: ${(error as Error).message}`;
+      const errorMessage = `Failed to activate space: ${(error as Error).message}`;
       console.error(`[StateManager] ${errorMessage}`);
       throw new Error(errorMessage);
     } finally {
-      this.releaseLock(oldSpaceId);
-      this.releaseLock(newSpaceId);
+      this.releaseLock(permanentId);
     }
   }
 

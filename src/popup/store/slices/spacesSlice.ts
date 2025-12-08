@@ -12,6 +12,23 @@ import {
   AppDispatch,
   RootState
 } from '../types';
+import { Space } from '@/shared/types/Space';
+
+/**
+ * Find space entry by windowId in a spaces record.
+ * Returns [permanentId, space] tuple or [null, null] if not found.
+ */
+function findSpaceByWindowId(
+  spaces: Record<string, Space>,
+  windowId: number
+): [string | null, Space | null] {
+  for (const [permId, space] of Object.entries(spaces)) {
+    if (space.windowId === windowId) {
+      return [permId, space];
+    }
+  }
+  return [null, null];
+}
 
 // Message timeout configuration (15 seconds allows for service worker initialization)
 const MESSAGE_TIMEOUT = 15000;
@@ -411,14 +428,13 @@ export default function spacesReducer(
         }
         case 'close': {
           const { windowId } = update.payload;
-          const spaceId = windowId.toString();
-          const space = updatedState.spaces[spaceId];
-          if (space) {
-            const { [spaceId]: closedSpace, ...remainingSpaces } = updatedState.spaces;
+          const [permId, space] = findSpaceByWindowId(updatedState.spaces, windowId);
+          if (permId && space) {
+            const { [permId]: closedSpace, ...remainingSpaces } = updatedState.spaces;
             updatedState.spaces = remainingSpaces;
             updatedState.closedSpaces = {
               ...updatedState.closedSpaces,
-              [spaceId]: {
+              [permId]: {
                 ...closedSpace,
                 windowId: undefined,
                 isActive: false,
@@ -489,21 +505,24 @@ export default function spacesReducer(
         }
         case 'close': {
           // Rollback: Move space back from closedSpaces to spaces
-          const { windowId } = update.payload;
-          const spaceId = windowId.toString();
+          // The space was moved to closedSpaces using its permanentId, so we need to find it there
           const { space: originalSpace } = update.rollbackData;
-          const closedSpace = updatedState.closedSpaces[spaceId];
-          if (closedSpace && originalSpace) {
-            const { [spaceId]: _removed, ...remainingClosed } = updatedState.closedSpaces;
-            updatedState.closedSpaces = remainingClosed;
-            updatedState.spaces = {
-              ...updatedState.spaces,
-              [spaceId]: {
-                ...closedSpace,
-                windowId: originalSpace.windowId,
-                isActive: true
-              }
-            };
+          if (originalSpace) {
+            // Use the originalSpace's permanentId to find it in closedSpaces
+            const permId = originalSpace.permanentId;
+            const closedSpace = updatedState.closedSpaces[permId];
+            if (closedSpace) {
+              const { [permId]: _removed, ...remainingClosed } = updatedState.closedSpaces;
+              updatedState.closedSpaces = remainingClosed;
+              updatedState.spaces = {
+                ...updatedState.spaces,
+                [permId]: {
+                  ...closedSpace,
+                  windowId: originalSpace.windowId,
+                  isActive: true
+                }
+              };
+            }
           }
           break;
         }
@@ -591,18 +610,20 @@ export default function spacesReducer(
 
     case `${RENAME_SPACE}/fulfilled`: {
       const { windowId, name } = action.payload;
-      if (state.spaces[windowId]) {
+      // windowId is passed as a string, convert to number to find the space
+      const windowIdNum = parseInt(windowId, 10);
+      const [permId, space] = findSpaceByWindowId(state.spaces, windowIdNum);
+      if (permId && space) {
         return {
           ...state,
           spaces: {
             ...state.spaces,
-            [windowId]: {
-              ...state.spaces[windowId],
+            [permId]: {
+              ...space,
               name,
-              customName: name, // Keep customName in sync
               named: true,
               lastModified: Date.now(),
-              version: (state.spaces[windowId].version || 1) + 1
+              version: (space.version || 1) + 1
             }
           }
         };
@@ -612,14 +633,17 @@ export default function spacesReducer(
 
     case `${CLOSE_SPACE}/fulfilled`: {
       const windowId = action.payload;
-      if (state.spaces[windowId]) {
-        const { [windowId]: closedSpace, ...remainingSpaces } = state.spaces;
+      // windowId is passed as a string, convert to number to find the space
+      const windowIdNum = parseInt(windowId, 10);
+      const [permId, space] = findSpaceByWindowId(state.spaces, windowIdNum);
+      if (permId && space) {
+        const { [permId]: closedSpace, ...remainingSpaces } = state.spaces;
         return {
           ...state,
           spaces: remainingSpaces,
           closedSpaces: {
             ...state.closedSpaces,
-            [windowId]: {
+            [permId]: {
               ...closedSpace,
               lastModified: Date.now()
             }

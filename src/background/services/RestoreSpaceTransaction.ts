@@ -102,14 +102,17 @@ export class RestoreSpaceTransaction {
     this.stateManager.attachWindowToRestore(spaceId, windowId);
 
     try {
-      console.log(`[RestoreSpaceTransaction] Re-keying space ${spaceId} to window ${windowId}`);
+      console.log(`[RestoreSpaceTransaction] Activating space ${spaceId} with window ${windowId}`);
       await this.stateManager.rekeySpace(spaceId, windowId);
 
-      const restoredSpace = this.stateManager.getAllSpaces()[windowId.toString()];
-      console.log('[RestoreSpaceTransaction] Rekey result', {
+      // Space is keyed by permanentId (spaceId), not windowId
+      const restoredSpace = this.stateManager.getAllSpaces()[spaceId];
+      console.log('[RestoreSpaceTransaction] Activation result', {
         id: restoredSpace?.id,
+        permanentId: restoredSpace?.permanentId,
         name: restoredSpace?.name,
-        named: restoredSpace?.named
+        named: restoredSpace?.named,
+        windowId: restoredSpace?.windowId
       });
     } catch (error) {
       this.stateManager.cancelRestoreIntent(spaceId, error instanceof Error ? error.message : 'Restore failed');

@@ -36,9 +36,16 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
       return;
     }
 
+    // Guard against missing windowId (closed spaces)
+    if (!space.windowId) {
+      console.error('Cannot rename space: no windowId available');
+      dispatch(toggleEditMode());
+      return;
+    }
+
     try {
       await dispatch(renameSpace({
-        windowId: parseInt(space.id),
+        windowId: space.windowId,
         name: editedName
       }));
       dispatch(toggleEditMode());
@@ -61,13 +68,19 @@ const SpaceItem: React.FC<SpaceItemProps> = ({
       return;
     }
 
+    // Guard against missing windowId (closed spaces)
+    if (!space.windowId) {
+      console.error('Auto-save skipped: no windowId available');
+      return;
+    }
+
     dispatch(renameSpace({
-      windowId: parseInt(space.id),
+      windowId: space.windowId,
       name: name
     })).catch(error => {
       console.error('Auto-save failed:', error);
     });
-  }, [dispatch, space.id, space.name]);
+  }, [dispatch, space.windowId, space.name]);
 
   // Debounced version for auto-save while typing (500ms delay)
   const debouncedAutoSave = useMemo(
