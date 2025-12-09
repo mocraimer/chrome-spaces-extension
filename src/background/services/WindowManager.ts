@@ -48,11 +48,18 @@ export class WindowManager implements IWindowManager {
    */
   @PerformanceTrackingService.track(MetricCategories.WINDOW, 300)
   async switchToWindow(windowId: number): Promise<void> {
+    // Get current window state to preserve it
+    const currentWindow = await this.getWindow(windowId);
+
+    // Only change state if minimized (to make it visible)
+    // Otherwise preserve the current state (maximized, fullscreen, etc.)
+    const updateOptions: chrome.windows.UpdateInfo = { focused: true };
+    if (currentWindow.state === 'minimized') {
+      updateOptions.state = 'normal';
+    }
+
     await executeChromeApi(
-      () => chrome.windows.update(windowId, { 
-        focused: true,
-        state: 'normal' // Ensure window is visible
-      }),
+      () => chrome.windows.update(windowId, updateOptions),
       'WINDOW_ERROR'
     );
   }
