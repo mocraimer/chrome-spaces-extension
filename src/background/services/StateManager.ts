@@ -4,7 +4,7 @@ import { WindowManager } from './WindowManager';
 import { TabManager } from './TabManager';
 import { StateUpdateQueue, StateUpdatePriority } from './StateUpdateQueue';
 import { StateBroadcastService } from './StateBroadcastService';
-import { Space } from '@/shared/types/Space';
+import { Space, WindowBounds } from '@/shared/types/Space';
 import { DEFAULT_SPACE_NAME } from '@/shared/constants';
 import { PerformanceTrackingService, MetricCategories } from './performance/PerformanceTrackingService';
 import { generateUUID } from '@/shared/utils/uuid';
@@ -26,7 +26,17 @@ export class StateManager implements IStateManager {
     MAX_BROADCAST_QUEUE: 50,
     LOCK_TIMEOUT_MS: 5000,
     URL_MATCH_THRESHOLD: 0.5,
-    MAX_SPACE_NAME_LENGTH: 100
+    MAX_SPACE_NAME_LENGTH: 100,
+    // Composite scoring weights (must sum to 100)
+    SCORING_WEIGHTS: {
+      DIRECT_ID_MATCH: 100,   // sourceWindowId exact match (instant win)
+      URL_OVERLAP: 40,        // URL matching (most reliable)
+      DOMAIN_OVERLAP: 25,     // Domain-based matching
+      TAB_COUNT: 15,          // Tab count similarity
+      BOUNDS_MATCH: 20        // Window position/size match
+    },
+    MIN_MATCH_SCORE: 35,      // Minimum score to accept a match
+    BOUNDS_TOLERANCE: 50      // Pixels tolerance for bounds matching
   } as const;
 
   // Spaces keyed by permanentId (stable across restarts)
@@ -67,6 +77,193 @@ export class StateManager implements IStateManager {
     private broadcastService: StateBroadcastService,
     private restoreRegistry: RestoreRegistry
   ) { }
+
+  // ============================================================================
+  // COMPOSITE SCORING HELPERS
+  // ============================================================================
+
+  /**
+   * Extract domain from URL
+   */
+  private extractDomain(url: string): string | null {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extract unique domains from a list of URLs
+   */
+  private extractDomains(urls: string[]): string[] {
+    const domains = new Set<string>();
+    for (const url of urls) {
+      const domain = this.extractDomain(url);
+      if (domain && !domain.startsWith('chrome') && !domain.startsWith('newtab')) {
+        domains.add(domain);
+      }
+    }
+    return Array.from(domains);
+  }
+
+  /**
+   * Calculate URL overlap score (0-1)
+   */
+  private calculateUrlScore(windowUrls: string[], spaceUrls: string[]): number {
+    if (windowUrls.length === 0 || spaceUrls.length === 0) return 0;
+
+    const spaceUrlSet = new Set(spaceUrls);
+    const matchingUrls = windowUrls.filter(url => spaceUrlSet.has(url));
+    return matchingUrls.length / Math.max(windowUrls.length, spaceUrls.length);
+  }
+
+  /**
+   * Calculate domain overlap score (0-1)
+   */
+  private calculateDomainScore(windowDomains: string[], spaceDomains: string[]): number {
+    if (windowDomains.length === 0 || spaceDomains.length === 0) return 0;
+
+    const spaceDomainSet = new Set(spaceDomains);
+    const matchingDomains = windowDomains.filter(d => spaceDomainSet.has(d));
+    return matchingDomains.length / Math.max(windowDomains.length, spaceDomains.length);
+  }
+
+  /**
+   * Calculate tab count similarity score (0-1)
+   */
+  private calculateTabCountScore(windowTabCount: number, spaceTabCount: number): number {
+    if (spaceTabCount === 0) return 0;
+    const diff = Math.abs(windowTabCount - spaceTabCount);
+    const maxCount = Math.max(windowTabCount, spaceTabCount);
+    // Score decreases as difference increases
+    return Math.max(0, 1 - (diff / maxCount));
+  }
+
+  /**
+   * Calculate bounds match score (0-1)
+   */
+  private calculateBoundsScore(windowBounds: WindowBounds | null, spaceBounds: WindowBounds | undefined): number {
+    if (!windowBounds || !spaceBounds) return 0;
+
+    const tolerance = StateManager.CONFIG.BOUNDS_TOLERANCE;
+
+    const leftMatch = Math.abs(windowBounds.left - spaceBounds.left) <= tolerance;
+    const topMatch = Math.abs(windowBounds.top - spaceBounds.top) <= tolerance;
+    const widthMatch = Math.abs(windowBounds.width - spaceBounds.width) <= tolerance;
+    const heightMatch = Math.abs(windowBounds.height - spaceBounds.height) <= tolerance;
+
+    // Score based on how many bounds properties match
+    const matches = [leftMatch, topMatch, widthMatch, heightMatch].filter(Boolean).length;
+    return matches / 4;
+  }
+
+  /**
+   * Calculate composite match score between a window and a space
+   * Returns score 0-100 and breakdown of individual scores
+   */
+  private calculateMatchScore(
+    window: chrome.windows.Window,
+    windowUrls: string[],
+    windowDomains: string[],
+    space: Space
+  ): { score: number; breakdown: Record<string, number>; reason: string } {
+    const weights = StateManager.CONFIG.SCORING_WEIGHTS;
+
+    // Check for direct ID match (instant win)
+    if (space.sourceWindowId && space.sourceWindowId === window.id?.toString()) {
+      return {
+        score: weights.DIRECT_ID_MATCH,
+        breakdown: { directId: weights.DIRECT_ID_MATCH },
+        reason: 'sourceWindowId'
+      };
+    }
+
+    // Calculate individual scores (0-1 range)
+    const urlScore = this.calculateUrlScore(windowUrls, space.urls || []);
+    const domainScore = this.calculateDomainScore(windowDomains, space.domains || this.extractDomains(space.urls || []));
+    const tabCountScore = this.calculateTabCountScore(windowUrls.length, (space.urls || []).length);
+
+    const windowBounds: WindowBounds | null = window.left !== undefined ? {
+      left: window.left!,
+      top: window.top!,
+      width: window.width!,
+      height: window.height!,
+      state: window.state
+    } : null;
+    const boundsScore = this.calculateBoundsScore(windowBounds, space.lastKnownBounds);
+
+    // Calculate weighted composite score
+    const compositeScore =
+      (urlScore * weights.URL_OVERLAP) +
+      (domainScore * weights.DOMAIN_OVERLAP) +
+      (tabCountScore * weights.TAB_COUNT) +
+      (boundsScore * weights.BOUNDS_MATCH);
+
+    const breakdown = {
+      url: Math.round(urlScore * weights.URL_OVERLAP),
+      domain: Math.round(domainScore * weights.DOMAIN_OVERLAP),
+      tabCount: Math.round(tabCountScore * weights.TAB_COUNT),
+      bounds: Math.round(boundsScore * weights.BOUNDS_MATCH)
+    };
+
+    // Create reason string showing what matched
+    const reasons: string[] = [];
+    if (urlScore > 0.3) reasons.push(`URL:${Math.round(urlScore * 100)}%`);
+    if (domainScore > 0.3) reasons.push(`domain:${Math.round(domainScore * 100)}%`);
+    if (tabCountScore > 0.7) reasons.push(`tabs:${windowUrls.length}`);
+    if (boundsScore > 0.5) reasons.push('bounds');
+
+    return {
+      score: Math.round(compositeScore),
+      breakdown,
+      reason: reasons.length > 0 ? reasons.join('+') : 'low confidence'
+    };
+  }
+
+  /**
+   * Find best matching space for a window using composite scoring
+   */
+  private findBestMatch(
+    window: chrome.windows.Window,
+    windowUrls: string[],
+    windowDomains: string[],
+    candidates: Map<string, Space>
+  ): { permId: string; space: Space; score: number; reason: string } | null {
+    let bestMatch: { permId: string; space: Space; score: number; reason: string } | null = null;
+
+    for (const [permId, space] of candidates) {
+      const { score, reason } = this.calculateMatchScore(window, windowUrls, windowDomains, space);
+
+      if (score >= StateManager.CONFIG.MIN_MATCH_SCORE) {
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { permId, space, score, reason };
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  /**
+   * Extract window bounds from a Chrome window object
+   */
+  private getWindowBounds(window: chrome.windows.Window): WindowBounds | undefined {
+    if (window.left === undefined || window.top === undefined ||
+        window.width === undefined || window.height === undefined) {
+      return undefined;
+    }
+    return {
+      left: window.left,
+      top: window.top,
+      width: window.width,
+      height: window.height,
+      state: window.state
+    };
+  }
+
+  // ============================================================================
 
   /**
    * Creates an incremental state update
@@ -809,64 +1006,29 @@ export class StateManager implements IStateManager {
       // Get window's current tabs for matching
       const tabs = await this.tabManager.getTabs(window.id);
       const windowUrls = tabs.map(tab => this.tabManager.getTabUrl(tab)).filter(url => url && url.length > 0);
-      // Create Set for O(1) lookups
-      const windowUrlSet = new Set(windowUrls);
+      const windowDomains = this.extractDomains(windowUrls);
 
-      let matchedSpace: Space | null = null;
-      let matchSource = '';
+      // Use composite scoring to find best match
+      const bestMatch = this.findBestMatch(window, windowUrls, windowDomains, unmatchedSpaces);
 
-      // Strategy 1: Check if any space already claims this windowId
-      // Also check sourceWindowId as fallback (preserved after service worker wake-up when windowId is reset)
-      for (const [permId, space] of unmatchedSpaces) {
-        if (space.windowId === window.id ||
-            (space.sourceWindowId && space.sourceWindowId === window.id.toString())) {
-          matchedSpace = space;
-          matchSource = space.windowId === window.id ? 'windowId' : 'sourceWindowId';
-          unmatchedSpaces.delete(permId);
-          break;
-        }
-      }
+      if (bestMatch) {
+        const { permId, space: matchedSpace, score, reason } = bestMatch;
+        unmatchedSpaces.delete(permId);
 
-      // Strategy 2: URL-based matching (for stale spaces after restart)
-      if (!matchedSpace && windowUrls.length > 0) {
-        let bestMatch: { permId: string; space: Space; score: number } | null = null;
-
-        for (const [permId, space] of unmatchedSpaces) {
-          const spaceUrls = (space.urls || []).filter(url => url && url.length > 0);
-          if (spaceUrls.length === 0) continue;
-
-          // Use Set for O(1) lookups instead of O(n) array includes
-          const matchingUrls = spaceUrls.filter(url => windowUrlSet.has(url));
-          const score = matchingUrls.length / Math.max(windowUrls.length, spaceUrls.length);
-
-          // Use lower threshold (0.3) for named spaces, higher for unnamed
-          const threshold = space.named ? 0.3 : StateManager.CONFIG.URL_MATCH_THRESHOLD;
-          if (score >= threshold && (!bestMatch || score > bestMatch.score)) {
-            bestMatch = { permId, space, score };
-          }
-        }
-
-        if (bestMatch) {
-          matchedSpace = bestMatch.space;
-          matchSource = `URL (${(bestMatch.score * 100).toFixed(0)}%)`;
-          unmatchedSpaces.delete(bestMatch.permId);
-        }
-      }
-
-      if (matchedSpace) {
         // Update existing space with current window state
-        console.log(`[StateManager] 🔗 Window ${window.id} matched to space "${matchedSpace.name}" via ${matchSource}`);
+        console.log(`[StateManager] 🔗 Window ${window.id} matched to space "${matchedSpace.name}" (score: ${score}, reason: ${reason})`);
 
-        const permId = matchedSpace.permanentId;
         activePermIds.add(permId);
         this.windowToSpaceMap.set(window.id, permId);
 
         const updatedSpace: Space = {
           ...matchedSpace,
-          id: permId, // Use permanentId as id
+          id: permId,
           urls: windowUrls.length > 0 ? windowUrls : matchedSpace.urls,
+          domains: windowDomains.length > 0 ? windowDomains : matchedSpace.domains,
           windowId: window.id,
           sourceWindowId: window.id.toString(),
+          lastKnownBounds: this.getWindowBounds(window),
           isActive: true,
           lastModified: now,
           lastSync: now,
@@ -894,9 +1056,11 @@ export class StateManager implements IStateManager {
           permanentId: permId,
           name,
           urls: windowUrls,
+          domains: windowDomains,
           named: false,
           windowId: window.id,
           sourceWindowId: window.id.toString(),
+          lastKnownBounds: this.getWindowBounds(window),
           isActive: true,
           createdAt: now,
           lastModified: now,
@@ -1097,7 +1261,17 @@ export class StateManager implements IStateManager {
         await new Promise(resolve => setTimeout(resolve, 200));
         tabs = await this.tabManager.getTabs(windowId);
       }
-      const urls = tabs.map(tab => this.tabManager.getTabUrl(tab));
+      const urls = tabs.map(tab => this.tabManager.getTabUrl(tab)).filter(url => url && url.length > 0);
+      const domains = this.extractDomains(urls);
+
+      // Get window bounds for future matching
+      let bounds: WindowBounds | undefined;
+      try {
+        const window = await this.windowManager.getWindow(windowId);
+        bounds = this.getWindowBounds(window);
+      } catch {
+        // Window might not exist yet, skip bounds
+      }
 
       // Create new space
       const name = options?.name || spaceName || `${DEFAULT_SPACE_NAME} ${windowId}`;
@@ -1116,9 +1290,11 @@ export class StateManager implements IStateManager {
         permanentId: permId,
         name,
         urls,
+        domains,
         named,
         windowId,
         sourceWindowId: windowId.toString(),
+        lastKnownBounds: bounds,
         isActive: true,
         createdAt: now,
         lastModified: now,

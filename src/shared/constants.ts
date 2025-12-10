@@ -17,9 +17,10 @@ export const DEFAULT_SETTINGS = {
 // Timeouts and Intervals
 export const MESSAGE_TIMEOUT = 5000;        // 5 seconds timeout for message operations
 export const SYNC_INTERVAL = 60000;         // 1 minute interval for window sync
-export const STARTUP_DELAY = 1000;          // 1 second delay on startup
+export const STARTUP_DELAY = 2000;          // 2 seconds delay on startup (for Chrome to restore tabs)
 export const RECOVERY_CHECK_DELAY = 5000;   // 5 seconds delay for recovery checks
 export const TAB_LOAD_TIMEOUT = 30000;      // 30 seconds timeout for tab loading
+export const SESSION_RESTORE_RESYNC_DELAY = 10000; // 10 seconds for a second sync pass after Chrome session restore
 
 // Message Types
 export const MessageTypes = {

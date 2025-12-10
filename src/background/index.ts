@@ -6,7 +6,7 @@ import { MessageHandler } from './services/MessageHandler';
 import { StateUpdateQueue } from './services/StateUpdateQueue';
 import { StateBroadcastService } from './services/StateBroadcastService';
 import { RestoreSpaceTransaction } from './services/RestoreSpaceTransaction';
-import { STARTUP_DELAY, RECOVERY_CHECK_DELAY } from '@/shared/constants';
+import { STARTUP_DELAY, RECOVERY_CHECK_DELAY, SESSION_RESTORE_RESYNC_DELAY } from '@/shared/constants';
 import { PerformanceMessageHandler } from './services/performance/PerformanceMessageHandler';
 import { PerformanceTrackingService, MetricCategories } from './services/performance/PerformanceTrackingService';
 import { StorageManager as IStorageManager } from '@/shared/types/Services';
@@ -189,19 +189,24 @@ class BackgroundService {
   @PerformanceTrackingService.track(MetricCategories.STATE, 2000)
   private async handleStartup(): Promise<void> {
     try {
-      // Wait for Chrome to settle
+      // Wait for Chrome to settle and restore tabs
       await this.delay(STARTUP_DELAY);
-      
+
       // Initialize state
       await this.stateManager.initialize();
 
-      // Always restore named spaces - they are meant to persist
-      // Named spaces represent user-defined workspaces that should survive restarts
-      console.log('[Startup] Restoring named spaces...');
+      // First sync pass - match Chrome-restored windows to existing spaces
+      console.log('[Startup] First sync pass - matching restored windows to spaces...');
+      await this.stateManager.synchronizeWindowsAndSpaces();
+
+      // Only restore named spaces that weren't matched by Chrome's session restore
+      console.log('[Startup] Restoring any remaining named spaces...');
       await this.restoreSpaces();
 
-      // Double-check after a delay
-      await this.delay(RECOVERY_CHECK_DELAY);
+      // Second sync pass after tabs have had time to fully load
+      // Chrome session restore may take time to populate tab URLs
+      await this.delay(SESSION_RESTORE_RESYNC_DELAY);
+      console.log('[Startup] Second sync pass - tabs should be fully loaded now...');
       await this.stateManager.synchronizeWindowsAndSpaces();
     } catch (error) {
       console.error('Startup error:', error);

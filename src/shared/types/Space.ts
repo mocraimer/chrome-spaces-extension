@@ -1,4 +1,15 @@
 /**
+ * Window bounds for matching after Chrome restart
+ */
+export interface WindowBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  state?: string;  // 'normal' | 'minimized' | 'maximized' | 'fullscreen'
+}
+
+/**
  * Represents a collection of tabs as a named space
  */
 export interface Space {
@@ -17,6 +28,10 @@ export interface Space {
   lastUsed: number;           // Last time space was accessed
   isActive: boolean;          // Whether window is currently open
   windowId?: number;          // Current window ID (if active)
+
+  // Matching fields for Chrome restart
+  lastKnownBounds?: WindowBounds;  // Window position/size for matching
+  domains?: string[];              // Extracted domains for fuzzy matching
 }
 
 /**
