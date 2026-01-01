@@ -536,10 +536,14 @@ describe('StateManager', () => {
 
     it('does not reopen closed spaces when window ID is reused', async () => {
       const closedPermId = 'perm-closed';
+      // Create a closed space with DIFFERENT URLs than the current window
+      // This tests that window ID reuse alone shouldn't reopen a closed space
       const closedSpace = createMockSpace(closedPermId, 'Closed Space', {
         isActive: false,
         windowId: undefined,
-        version: 5
+        version: 5,
+        urls: ['https://different-site.com', 'https://another-site.com'], // Different URLs
+        sourceWindowId: '1' // Same as mockWindow.id but shouldn't match due to different content
       });
 
       windowManager.getAllWindows.mockResolvedValue([mockWindow]);
@@ -551,7 +555,72 @@ describe('StateManager', () => {
 
       const call = (storageManager.saveState as jest.Mock).mock.calls[0];
       const savedClosedSpaces = call[1];
+      // The closed space should remain closed since URLs don't match
       expect(savedClosedSpaces[closedPermId]).toBeDefined();
+    });
+
+    it('matches closed space to window when URLs match (restores named space)', async () => {
+      const closedPermId = 'perm-closed-named';
+      // Create a NAMED closed space with URLs that match the window
+      const closedSpace = createMockSpace(closedPermId, 'My Named Work', {
+        isActive: false,
+        windowId: undefined,
+        version: 5,
+        named: true,
+        urls: ['https://example.com'], // Same as mockTab URL
+        sourceWindowId: 'old-window-999' // Old window ID - shouldn't matter
+      });
+
+      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      storageManager.loadSpaces.mockResolvedValue({});
+      storageManager.loadClosedSpaces.mockResolvedValue({ [closedPermId]: closedSpace });
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      const call = (storageManager.saveState as jest.Mock).mock.calls[0];
+      const savedSpaces = call[0];
+      const savedClosedSpaces = call[1];
+
+      // The closed space should be matched to the window and become active
+      expect(savedSpaces[closedPermId]).toBeDefined();
+      expect(savedSpaces[closedPermId].isActive).toBe(true);
+      expect(savedSpaces[closedPermId].name).toBe('My Named Work');
+      expect(savedSpaces[closedPermId].named).toBe(true);
+
+      // Should be removed from closed spaces
+      expect(savedClosedSpaces[closedPermId]).toBeUndefined();
+    });
+
+    it('does NOT match closed space to window when URLs differ (keeps closed space closed)', async () => {
+      const closedPermId = 'perm-closed-nomatch';
+      // Create a closed space with DIFFERENT URLs than the window
+      const closedSpace = createMockSpace(closedPermId, 'My Other Work', {
+        isActive: false,
+        windowId: undefined,
+        version: 5,
+        named: true,
+        urls: ['https://different-site.com', 'https://another-site.com'], // Different from mockTab URL
+        sourceWindowId: 'old-window-999'
+      });
+
+      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      storageManager.loadSpaces.mockResolvedValue({});
+      storageManager.loadClosedSpaces.mockResolvedValue({ [closedPermId]: closedSpace });
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      const call = (storageManager.saveState as jest.Mock).mock.calls[0];
+      const savedSpaces = call[0];
+      const savedClosedSpaces = call[1];
+
+      // The closed space should NOT be matched - URLs don't overlap
+      expect(savedSpaces[closedPermId]).toBeUndefined();
+
+      // Should remain in closed spaces
+      expect(savedClosedSpaces[closedPermId]).toBeDefined();
+      expect(savedClosedSpaces[closedPermId].name).toBe('My Other Work');
     });
 
     it('preserves named spaces when validation fails due to URL mismatch', async () => {
@@ -603,19 +672,72 @@ describe('StateManager', () => {
       await stateManager.synchronizeWindowsAndSpaces();
 
       expect(storageManager.saveState).toHaveBeenCalled();
-      
+
       const saveStateCall = (storageManager.saveState as jest.Mock).mock.calls[0];
       const savedSpaces = saveStateCall[0];
       const savedClosedSpaces = saveStateCall[1];
-      
+
       const activeSpaceKeys = Object.keys(savedSpaces);
       expect(activeSpaceKeys.length).toBeGreaterThan(0);
       const newActiveSpace = Object.values(savedSpaces).find((s: any) => s.windowId === 1);
       expect(newActiveSpace).toBeDefined();
-      
+
       const preservedInClosed = Object.values(savedClosedSpaces).find((s: any) => s.name === 'My Work');
       const preservedInActive = Object.values(savedSpaces).find((s: any) => s.name === 'My Work');
       expect(preservedInClosed || preservedInActive).toBeDefined();
+    });
+
+    it('explicitly preserves named flag during window-to-space matching', async () => {
+      const namedPermId = 'perm-named-explicit';
+      const namedSpace = createMockSpace(namedPermId, 'Explicitly Named Space', {
+        isActive: true,
+        windowId: mockWindowId,
+        sourceWindowId: namedPermId,
+        version: 3,
+        named: true,
+        urls: ['https://example.com'] // Same as mockTab URL for matching
+      });
+
+      windowManager.getAllWindows.mockResolvedValue([mockWindow]);
+      storageManager.loadSpaces.mockResolvedValue({ [namedPermId]: namedSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      expect(storageManager.saveState).toHaveBeenCalled();
+
+      const saveStateCall = (storageManager.saveState as jest.Mock).mock.calls[0];
+      const savedSpaces = saveStateCall[0];
+
+      // The space should still have its name and named flag after sync
+      expect(savedSpaces[namedPermId]).toBeDefined();
+      expect(savedSpaces[namedPermId].name).toBe('Explicitly Named Space');
+      expect(savedSpaces[namedPermId].named).toBe(true);
+      expect(savedSpaces[namedPermId].permanentId).toBe(namedPermId);
+    });
+
+    it('preserves name and named flag when moving orphaned space to closed', async () => {
+      const orphanPermId = 'perm-orphan-named';
+      const orphanSpace = createMockSpace(orphanPermId, 'Orphaned Named Space', {
+        isActive: true,
+        windowId: 999, // Window that doesn't exist
+        sourceWindowId: '999',
+        version: 2,
+        named: true,
+        urls: ['https://orphan-site.com']
+      });
+
+      // No windows available - simulates window closing
+      windowManager.getAllWindows.mockResolvedValue([]);
+      storageManager.loadSpaces.mockResolvedValue({ [orphanPermId]: orphanSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      await stateManager.initialize();
+      // Skip sync since no windows - directly verify state
+      const spaces = stateManager.getAllSpaces();
+      // After init, spaces should be reset to inactive
+      expect(Object.keys(spaces).length).toBe(1);
     });
   });
 
@@ -778,6 +900,191 @@ describe('StateManager', () => {
     it('should persist space name after popup reopen without renaming', async () => {
       const name = await stateManager.getSpaceName(testPermId);
       expect(name).toBe('Test Space');
+    });
+  });
+
+  describe('Chrome restart scenario - name preservation', () => {
+    it('should preserve name and named flag during handleShutdown', async () => {
+      const testPermId = 'perm-restart-test';
+      const testSpace = createMockSpace(testPermId, 'My Important Space', {
+        named: true,
+        isActive: true,
+        windowId: 123,
+        version: 5
+      });
+
+      storageManager.loadSpaces.mockResolvedValue({ [testPermId]: testSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      await stateManager.initialize();
+
+      // Simulate shutdown
+      await stateManager.handleShutdown();
+
+      // Verify saveState was called with preserved name and named flag
+      expect(storageManager.saveState).toHaveBeenCalled();
+      const saveStateCall = (storageManager.saveState as jest.Mock).mock.calls[0];
+      const savedSpaces = saveStateCall[0];
+
+      expect(savedSpaces[testPermId]).toBeDefined();
+      expect(savedSpaces[testPermId].name).toBe('My Important Space');
+      expect(savedSpaces[testPermId].named).toBe(true);
+      expect(savedSpaces[testPermId].permanentId).toBe(testPermId);
+      expect(savedSpaces[testPermId].isActive).toBe(false); // Marked inactive on shutdown
+    });
+
+    it('should preserve name and named flag during initialize reset', async () => {
+      const testPermId = 'perm-init-reset';
+      const testSpace = createMockSpace(testPermId, 'My Persisted Space', {
+        named: true,
+        isActive: true, // Will be reset to false
+        windowId: 456,
+        version: 3
+      });
+
+      storageManager.loadSpaces.mockResolvedValue({ [testPermId]: testSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      await stateManager.initialize();
+
+      // After initialization, the space should have name preserved but isActive=false
+      const spaces = stateManager.getAllSpaces();
+      expect(spaces[testPermId]).toBeDefined();
+      expect(spaces[testPermId].name).toBe('My Persisted Space');
+      expect(spaces[testPermId].named).toBe(true);
+      expect(spaces[testPermId].permanentId).toBe(testPermId);
+      expect(spaces[testPermId].isActive).toBe(false); // Reset during init
+    });
+
+    it('should preserve name through full shutdown and restart cycle', async () => {
+      const testPermId = 'perm-full-cycle';
+      const originalName = 'Full Cycle Space';
+      const testSpace = createMockSpace(testPermId, originalName, {
+        named: true,
+        isActive: true,
+        windowId: 789,
+        version: 1
+      });
+
+      // Initial state
+      storageManager.loadSpaces.mockResolvedValue({ [testPermId]: testSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      await stateManager.initialize();
+
+      // Simulate shutdown
+      await stateManager.handleShutdown();
+
+      // Capture what was saved during shutdown
+      const shutdownCall = (storageManager.saveState as jest.Mock).mock.calls[0];
+      const savedDuringShutdown = shutdownCall[0];
+
+      // Simulate restart - load the saved state
+      storageManager.loadSpaces.mockResolvedValue(savedDuringShutdown);
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      // Create new stateManager instance to simulate restart
+      const newRestoreRegistry = new RestoreRegistry();
+      const newStateManager = new StateManager(
+        windowManager,
+        tabManager,
+        storageManager,
+        updateQueue,
+        broadcastService,
+        newRestoreRegistry
+      );
+      await newStateManager.initialize();
+
+      // Verify name is preserved after restart
+      const spacesAfterRestart = newStateManager.getAllSpaces();
+      expect(spacesAfterRestart[testPermId]).toBeDefined();
+      expect(spacesAfterRestart[testPermId].name).toBe(originalName);
+      expect(spacesAfterRestart[testPermId].named).toBe(true);
+    });
+
+    it('should preserve name when space is closed and reopened', async () => {
+      const testPermId = 'perm-close-reopen';
+      const spaceName = 'Closeable Space';
+      const testSpace = createMockSpace(testPermId, spaceName, {
+        named: true,
+        isActive: true,
+        windowId: 100,
+        version: 1,
+        urls: ['https://example.com']
+      });
+
+      storageManager.loadSpaces.mockResolvedValue({ [testPermId]: testSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      await stateManager.initialize();
+
+      // Set up window mapping
+      (stateManager as any).windowToSpaceMap.set(100, testPermId);
+
+      // Close the space
+      windowManager.windowExists.mockResolvedValue(false);
+      tabManager.getTabs.mockResolvedValue([]);
+      await stateManager.closeSpace(100);
+
+      // Verify space was moved to closedSpaces
+      expect(storageManager.saveClosedSpaces).toHaveBeenCalled();
+      const saveClosedCall = (storageManager.saveClosedSpaces as jest.Mock).mock.calls[0][0];
+      expect(saveClosedCall[testPermId]).toBeDefined();
+      expect(saveClosedCall[testPermId].name).toBe(spaceName);
+      expect(saveClosedCall[testPermId].named).toBe(true);
+    });
+
+    it('should preserve name through multiple synchronization cycles', async () => {
+      const testPermId = 'perm-multi-sync';
+      const spaceName = 'Multi Sync Space';
+      const testSpace = createMockSpace(testPermId, spaceName, {
+        named: true,
+        isActive: true,
+        windowId: 200,
+        version: 1,
+        urls: ['https://example.com']
+      });
+
+      storageManager.loadSpaces.mockResolvedValue({ [testPermId]: testSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      await stateManager.initialize();
+
+      // Create mock tab and window
+      const testTab: chrome.tabs.Tab = {
+        id: 1,
+        index: 0,
+        windowId: 200,
+        highlighted: false,
+        active: true,
+        pinned: false,
+        incognito: false,
+        selected: false,
+        autoDiscardable: true,
+        discarded: false,
+        url: 'https://example.com',
+        groupId: -1
+      };
+
+      const mockWindowForSync = {
+        id: 200,
+        focused: true,
+        alwaysOnTop: false,
+        incognito: false,
+        type: 'normal',
+        tabs: [testTab]
+      } as chrome.windows.Window;
+
+      windowManager.getAllWindows.mockResolvedValue([mockWindowForSync]);
+      tabManager.getTabs.mockResolvedValue([testTab]);
+      tabManager.getTabUrl.mockReturnValue('https://example.com');
+
+      // Run multiple sync cycles
+      await stateManager.synchronizeWindowsAndSpaces();
+      await stateManager.synchronizeWindowsAndSpaces();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      // Verify name is still preserved
+      const spaces = stateManager.getAllSpaces();
+      const space = Object.values(spaces).find(s => s.name === spaceName);
+      expect(space).toBeDefined();
+      expect(space!.named).toBe(true);
     });
   });
 

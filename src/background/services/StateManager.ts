@@ -33,9 +33,11 @@ export class StateManager implements IStateManager {
       URL_OVERLAP: 40,        // URL matching (most reliable)
       DOMAIN_OVERLAP: 25,     // Domain-based matching
       TAB_COUNT: 15,          // Tab count similarity
-      BOUNDS_MATCH: 20        // Window position/size match
+      BOUNDS_MATCH: 20,       // Window position/size match
+      NAMED_BONUS: 15         // Bonus for user-named spaces to prevent losing them
     },
     MIN_MATCH_SCORE: 35,      // Minimum score to accept a match
+    MIN_MATCH_SCORE_NAMED: 20, // Lower threshold for named spaces (protect user names)
     BOUNDS_TOLERANCE: 50      // Pixels tolerance for bounds matching
   } as const;
 
@@ -172,7 +174,10 @@ export class StateManager implements IStateManager {
     const weights = StateManager.CONFIG.SCORING_WEIGHTS;
 
     // Check for direct ID match (instant win)
-    if (space.sourceWindowId && space.sourceWindowId === window.id?.toString()) {
+    // IMPORTANT: Only use sourceWindowId match for ACTIVE spaces, not closed spaces.
+    // Window IDs can be reused by Chrome, so a closed space's sourceWindowId
+    // may coincidentally match a completely different new window.
+    if (space.isActive && space.sourceWindowId && space.sourceWindowId === window.id?.toString()) {
       return {
         score: weights.DIRECT_ID_MATCH,
         breakdown: { directId: weights.DIRECT_ID_MATCH },
@@ -181,9 +186,11 @@ export class StateManager implements IStateManager {
     }
 
     // Calculate individual scores (0-1 range)
-    const urlScore = this.calculateUrlScore(windowUrls, space.urls || []);
-    const domainScore = this.calculateDomainScore(windowDomains, space.domains || this.extractDomains(space.urls || []));
-    const tabCountScore = this.calculateTabCountScore(windowUrls.length, (space.urls || []).length);
+    const spaceUrls = space.urls || [];
+    const spaceDomains = space.domains || this.extractDomains(spaceUrls);
+    const urlScore = this.calculateUrlScore(windowUrls, spaceUrls);
+    const domainScore = this.calculateDomainScore(windowDomains, spaceDomains);
+    const tabCountScore = this.calculateTabCountScore(windowUrls.length, spaceUrls.length);
 
     const windowBounds: WindowBounds | null = window.left !== undefined ? {
       left: window.left!,
@@ -195,17 +202,25 @@ export class StateManager implements IStateManager {
     const boundsScore = this.calculateBoundsScore(windowBounds, space.lastKnownBounds);
 
     // Calculate weighted composite score
-    const compositeScore =
+    let compositeScore =
       (urlScore * weights.URL_OVERLAP) +
       (domainScore * weights.DOMAIN_OVERLAP) +
       (tabCountScore * weights.TAB_COUNT) +
       (boundsScore * weights.BOUNDS_MATCH);
 
+    // Add bonus for named spaces to prevent losing user's custom names
+    // Only apply named bonus if there's some content match (URL or domain overlap)
+    // This prevents random matches between unrelated windows and named spaces
+    const hasContentMatch = urlScore > 0 || domainScore > 0;
+    const namedBonus = (space.named && hasContentMatch) ? weights.NAMED_BONUS : 0;
+    compositeScore += namedBonus;
+
     const breakdown = {
       url: Math.round(urlScore * weights.URL_OVERLAP),
       domain: Math.round(domainScore * weights.DOMAIN_OVERLAP),
       tabCount: Math.round(tabCountScore * weights.TAB_COUNT),
-      bounds: Math.round(boundsScore * weights.BOUNDS_MATCH)
+      bounds: Math.round(boundsScore * weights.BOUNDS_MATCH),
+      named: namedBonus
     };
 
     // Create reason string showing what matched
@@ -214,6 +229,7 @@ export class StateManager implements IStateManager {
     if (domainScore > 0.3) reasons.push(`domain:${Math.round(domainScore * 100)}%`);
     if (tabCountScore > 0.7) reasons.push(`tabs:${windowUrls.length}`);
     if (boundsScore > 0.5) reasons.push('bounds');
+    if (namedBonus > 0) reasons.push('named');
 
     return {
       score: Math.round(compositeScore),
@@ -223,7 +239,9 @@ export class StateManager implements IStateManager {
   }
 
   /**
-   * Find best matching space for a window using composite scoring
+   * Find best matching space for a window using composite scoring.
+   * Named spaces get a lower match threshold to protect user's custom names,
+   * but only if there's some content overlap (URL/domain match).
    */
   private findBestMatch(
     window: chrome.windows.Window,
@@ -234,9 +252,16 @@ export class StateManager implements IStateManager {
     let bestMatch: { permId: string; space: Space; score: number; reason: string } | null = null;
 
     for (const [permId, space] of candidates) {
-      const { score, reason } = this.calculateMatchScore(window, windowUrls, windowDomains, space);
+      const { score, reason, breakdown } = this.calculateMatchScore(window, windowUrls, windowDomains, space);
 
-      if (score >= StateManager.CONFIG.MIN_MATCH_SCORE) {
+      // Use lower threshold for named spaces only if there's content overlap
+      // This protects named spaces from being lost but prevents random matches
+      const hasContentMatch = (breakdown.url > 0 || breakdown.domain > 0);
+      const minScore = (space.named && hasContentMatch)
+        ? StateManager.CONFIG.MIN_MATCH_SCORE_NAMED
+        : StateManager.CONFIG.MIN_MATCH_SCORE;
+
+      if (score >= minScore) {
         if (!bestMatch || score > bestMatch.score) {
           bestMatch = { permId, space, score, reason };
         }
@@ -479,6 +504,10 @@ export class StateManager implements IStateManager {
     for (const [spaceId, space] of Object.entries(this.spaces)) {
       updatedSpaces[spaceId] = {
         ...space,
+        // CRITICAL: Explicitly preserve identity fields during reset
+        name: space.name,
+        named: space.named,
+        permanentId: space.permanentId,
         isActive: false, // Reset to false, synchronization will set true if valid
         windowId: undefined, // Clear any stale window associations
         lastSync: Date.now()
@@ -825,6 +854,10 @@ export class StateManager implements IStateManager {
     for (const [spaceId, space] of Object.entries(this.spaces)) {
       updatedSpaces[spaceId] = {
         ...space,
+        // CRITICAL: Explicitly preserve identity fields
+        name: space.name,
+        named: space.named,
+        permanentId: space.permanentId,
         isActive: false,
         windowId: undefined, // Clear window association
         lastModified: Date.now(),
@@ -985,9 +1018,18 @@ export class StateManager implements IStateManager {
     // =========================================================================
 
     // First pass: collect all unmatched spaces for URL-based matching
+    // Include BOTH active spaces AND closed spaces (especially named ones)
+    // This ensures named spaces aren't lost after Chrome restarts
     const unmatchedSpaces = new Map<string, Space>();
     for (const [permId, space] of Object.entries(this.spaces)) {
       unmatchedSpaces.set(permId, space);
+    }
+    // Also include closed spaces (especially named ones) as matching candidates
+    // This helps recover named spaces after Chrome restarts
+    for (const [permId, space] of Object.entries(this.closedSpaces)) {
+      if (!unmatchedSpaces.has(permId)) {
+        unmatchedSpaces.set(permId, space);
+      }
     }
 
     for (const window of windows) {
@@ -1024,6 +1066,10 @@ export class StateManager implements IStateManager {
         const updatedSpace: Space = {
           ...matchedSpace,
           id: permId,
+          // CRITICAL: Explicitly preserve name and named flag to prevent name loss
+          name: matchedSpace.name,
+          named: matchedSpace.named,
+          permanentId: matchedSpace.permanentId,
           urls: windowUrls.length > 0 ? windowUrls : matchedSpace.urls,
           domains: windowDomains.length > 0 ? windowDomains : matchedSpace.domains,
           windowId: window.id,
@@ -1082,10 +1128,14 @@ export class StateManager implements IStateManager {
     for (const [permId, space] of Object.entries(this.spaces)) {
       if (!activePermIds.has(permId)) {
         if (space.named) {
-          // Move named spaces to closedSpaces
+          // Move named spaces to closedSpaces - CRITICAL: preserve name and named flag
           console.log(`[StateManager] 📦 Moving orphaned named space "${space.name}" to closed`);
           this.closedSpaces[permId] = {
             ...space,
+            // Explicitly preserve identity fields
+            name: space.name,
+            named: space.named,
+            permanentId: space.permanentId,
             isActive: false,
             windowId: undefined,
             lastModified: now,
@@ -1673,7 +1723,10 @@ export class StateManager implements IStateManager {
     this.invalidateCache('closedSpaces');
 
     this.broadcastStateUpdate();
-    console.log('[StateManager] Spaces reloaded');
+    console.log('[StateManager] Spaces reloaded', {
+      spacesCount: Object.keys(this.spaces).length,
+      closedSpacesCount: Object.keys(this.closedSpaces).length
+    });
   }
 
   async renameSpace(windowId: number, name: string): Promise<void> {

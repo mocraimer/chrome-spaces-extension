@@ -5,33 +5,151 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 
 /**
- * Set the initial state for the extension
+ * Set the initial state for the extension by writing directly to IndexedDB
+ * and then notifying the background service to reload
  */
 export async function setupExtensionState(page: Page, state: any) {
   await page.evaluate(async (initialState) => {
+    const DB_NAME = 'chrome-spaces';
+    const DB_VERSION = 2;
+
+    // Helper to open IndexedDB
+    const openDb = (): Promise<IDBDatabase> => {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        request.onupgradeneeded = (event) => {
+          const db = (event.target as IDBOpenDBRequest).result;
+          if (!db.objectStoreNames.contains('spaces')) {
+            db.createObjectStore('spaces', { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains('closedSpaces')) {
+            db.createObjectStore('closedSpaces', { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains('meta')) {
+            db.createObjectStore('meta', { keyPath: 'key' });
+          }
+          if (!db.objectStoreNames.contains('tabs')) {
+            const tabs = db.createObjectStore('tabs', { keyPath: 'id' });
+            tabs.createIndex('tabs_by_spaceId', 'spaceId');
+          }
+        };
+      });
+    };
+
+    try {
+      const db = await openDb();
+      const tx = db.transaction(['spaces', 'closedSpaces', 'tabs', 'meta'], 'readwrite');
+
+      // Clear existing data
+      await Promise.all([
+        new Promise<void>((resolve, reject) => {
+          const req = tx.objectStore('spaces').clear();
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        }),
+        new Promise<void>((resolve, reject) => {
+          const req = tx.objectStore('closedSpaces').clear();
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        }),
+        new Promise<void>((resolve, reject) => {
+          const req = tx.objectStore('tabs').clear();
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        })
+      ]);
+
+      // Add spaces
+      const spacesStore = tx.objectStore('spaces');
+      for (const space of Object.values(initialState.spaces || {})) {
+        await new Promise<void>((resolve, reject) => {
+          const req = spacesStore.put(space);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      // Add closed spaces
+      const closedSpacesStore = tx.objectStore('closedSpaces');
+      const closedSpacesArray = Object.values(initialState.closedSpaces || {});
+      for (const space of closedSpacesArray) {
+        await new Promise<void>((resolve, reject) => {
+          const req = closedSpacesStore.put(space);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      // Add tabs for closed spaces (needed for restoration)
+      const tabsStore = tx.objectStore('tabs');
+      let tabCounter = 0;
+      for (const [spaceId, space] of Object.entries(initialState.closedSpaces || {})) {
+        const spaceData = space as any;
+        if (spaceData.urls) {
+          for (let i = 0; i < spaceData.urls.length; i++) {
+            tabCounter++;
+            const tabRecord = {
+              id: `tab-${spaceId}-${i}-${tabCounter}-${Date.now()}`,
+              spaceId: spaceId,
+              kind: 'closed',
+              url: spaceData.urls[i],
+              index: i,
+              createdAt: Date.now()
+            };
+            await new Promise<void>((resolve, reject) => {
+              const req = tabsStore.put(tabRecord);
+              req.onsuccess = () => resolve();
+              req.onerror = () => reject(req.error);
+            });
+          }
+        }
+      }
+
+      // Update meta
+      await new Promise<void>((resolve, reject) => {
+        const req = tx.objectStore('meta').put({ key: 'lastModified', value: Date.now() });
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      // Wait for transaction to complete
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+
+      db.close();
+      console.log('[setupExtensionState] IndexedDB state set successfully');
+    } catch (error) {
+      console.error('[setupExtensionState] Failed to set IndexedDB state:', error);
+    }
+
+    // Also set chrome.storage.local for bootstrap migration
     const fullState = {
-      spaces: {},
-      closedSpaces: {},
+      spaces: initialState.spaces || {},
+      closedSpaces: initialState.closedSpaces || {},
       permanentIdMappings: {},
       lastModified: Date.now(),
-      version: 1,
-      ...initialState
+      version: 1
     };
-    
-    // Use the correct storage key 'chrome_spaces'
     await chrome.storage.local.set({ chrome_spaces: fullState });
 
     // Notify background to reload state from storage
     try {
       await new Promise<void>((resolve) => {
-        chrome.runtime.sendMessage({ type: 'RELOAD_STATE' }, () => {
-          // Ignore errors/response, just fire and forget/wait for callback
+        chrome.runtime.sendMessage({ type: 'RELOAD_STATE' }, (response) => {
           if (chrome.runtime.lastError) {
-            console.log('Reload signal ignored (background likely inactive)');
+            console.log('Reload signal error:', chrome.runtime.lastError);
+          } else {
+            console.log('[setupExtensionState] Reload response:', response);
           }
           resolve();
         });
       });
+      // Give the background service a moment to process the reload
+      await new Promise(resolve => setTimeout(resolve, 500));
     } catch (e) {
       console.log('Error sending reload signal:', e);
     }
@@ -61,16 +179,23 @@ export async function cleanupTempFiles(filePath: string) {
 }
 
 /**
- * Create a mock space for testing
+ * Create a mock space for testing with all required fields
  */
 export function createMockSpace(id: string, name: string, urls: string[] = ['https://example.com']): Space {
+  const now = Date.now();
   return {
     id,
     name,
     urls,
-    lastModified: Date.now(),
+    lastModified: now,
     named: true,
-    version: 1
+    version: 1,
+    permanentId: id,  // Use id as permanentId for consistency
+    createdAt: now,
+    lastUsed: now,
+    isActive: false,  // Closed spaces are not active
+    lastSync: now,
+    sourceWindowId: id
   };
 }
 
