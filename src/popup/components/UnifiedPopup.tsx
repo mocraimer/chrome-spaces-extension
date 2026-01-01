@@ -6,7 +6,8 @@ import {
   fetchSpaces,
   setCurrentWindow,
   setSearch,
-  clearError
+  clearError,
+  moveTabToSpace
 } from '../store/slices/spacesSlice';
 
 // Import new components
@@ -128,6 +129,23 @@ const UnifiedPopup: React.FC = () => {
     navigation.setSelectedIndex(0);
   }, [dispatch, navigation]);
 
+  // Handle moving current tab to another space
+  const handleMoveTabToSpace = useCallback(async (targetWindowId: number) => {
+    try {
+      // Get the current active tab in the current window
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!activeTab?.id) {
+        console.error('No active tab found');
+        return;
+      }
+
+      await dispatch(moveTabToSpace({ tabId: activeTab.id, targetWindowId }));
+      console.log(`Moved tab ${activeTab.id} to window ${targetWindowId}`);
+    } catch (error) {
+      console.error('Failed to move tab:', error);
+    }
+  }, [dispatch]);
+
   // Handle space actions through the space management hook
   const handleSpaceAction = useCallback((action: SpaceAction) => {
     switch (action.type) {
@@ -162,10 +180,15 @@ const UnifiedPopup: React.FC = () => {
           spaceManagement.handleEditNameChange(action.name);
         }
         break;
+      case 'moveTabHere':
+        if (action.windowId) {
+          handleMoveTabToSpace(action.windowId);
+        }
+        break;
       default:
         console.warn('Unknown space action:', action);
     }
-  }, [spaceManagement]);
+  }, [spaceManagement, handleMoveTabToSpace]);
 
   // Handle confirmation dialogs
   const handleConfirmDelete = useCallback(() => {

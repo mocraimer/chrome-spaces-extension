@@ -7,6 +7,7 @@ export interface SpaceItemProps {
   isCurrent: boolean;
   isEditing: boolean;
   editingName: string;
+  showMoveTabButton?: boolean;
   onEdit: (space: Space) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -14,6 +15,7 @@ export interface SpaceItemProps {
   onRestore: (space: Space) => void;
   onDelete: (spaceId: string) => void;
   onEditNameChange: (name: string) => void;
+  onMoveTabHere?: (windowId: number) => void;
   getDisplayName: (space: Space) => string;
   className?: string;
 }
@@ -24,6 +26,7 @@ const SpaceItem: React.FC<SpaceItemProps> = memo(({
   isCurrent,
   isEditing,
   editingName,
+  showMoveTabButton = false,
   onEdit,
   onSave,
   onCancel,
@@ -31,6 +34,7 @@ const SpaceItem: React.FC<SpaceItemProps> = memo(({
   onRestore,
   onDelete,
   onEditNameChange,
+  onMoveTabHere,
   getDisplayName,
   className = ''
 }) => {
@@ -66,6 +70,13 @@ const SpaceItem: React.FC<SpaceItemProps> = memo(({
     e.stopPropagation();
     onDelete(space.id);
   }, [space.id, onDelete]);
+
+  const handleMoveTabHereClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (space.windowId && onMoveTabHere) {
+      onMoveTabHere(space.windowId);
+    }
+  }, [space.windowId, onMoveTabHere]);
 
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -123,6 +134,16 @@ const SpaceItem: React.FC<SpaceItemProps> = memo(({
             </div>
           </div>
           <div className="space-actions">
+            {showMoveTabButton && (
+              <button
+                onClick={handleMoveTabHereClick}
+                className="move-tab-btn"
+                title="Move current tab here"
+                data-testid={`move-tab-btn-${space.id}`}
+              >
+                ↪
+              </button>
+            )}
             {isActiveSpace && (
               <button
                 onClick={handleEditButtonClick}

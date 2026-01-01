@@ -3,7 +3,7 @@ import { Space } from '@/shared/types/Space';
 import UnifiedSpaceItem from './UnifiedSpaceItem';
 
 export interface SpaceAction {
-  type: 'edit' | 'switch' | 'restore' | 'delete' | 'save' | 'cancel' | 'editNameChange';
+  type: 'edit' | 'switch' | 'restore' | 'delete' | 'save' | 'cancel' | 'editNameChange' | 'moveTabHere';
   space?: Space;
   spaceId?: string;
   windowId?: number;
@@ -61,24 +61,29 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
   return (
     <div className={`spaces-list ${className}`.trim()} data-testid="spaces-list">
       {/* Active Spaces */}
-      {spaces.map((space, index) => (
-        <UnifiedSpaceItem
-          key={space.id}
-          space={space}
-          isSelected={selectedIndex === index}
-          isCurrent={space.windowId?.toString() === currentWindowId}
-          isEditing={editingSpaceId === space.id}
-          editingName={editingName}
-          onEdit={(space) => handleSpaceAction({ type: 'edit' }, space)}
-          onSave={() => handleSpaceAction({ type: 'save' })}
-          onCancel={() => handleSpaceAction({ type: 'cancel' })}
-          onSwitch={(windowId) => handleSpaceAction({ type: 'switch' }, undefined, undefined, windowId)}
-          onRestore={(space) => handleSpaceAction({ type: 'restore' }, space)}
-          onDelete={(spaceId) => handleSpaceAction({ type: 'delete' }, undefined, spaceId)}
-          onEditNameChange={(name) => handleSpaceAction({ type: 'editNameChange' }, undefined, undefined, undefined, name)}
-          getDisplayName={getDisplayName}
-        />
-      ))}
+      {spaces.map((space, index) => {
+        const isCurrent = space.windowId?.toString() === currentWindowId;
+        return (
+          <UnifiedSpaceItem
+            key={space.id}
+            space={space}
+            isSelected={selectedIndex === index}
+            isCurrent={isCurrent}
+            isEditing={editingSpaceId === space.id}
+            editingName={editingName}
+            showMoveTabButton={!isCurrent && space.isActive}
+            onEdit={(space) => handleSpaceAction({ type: 'edit' }, space)}
+            onSave={() => handleSpaceAction({ type: 'save' })}
+            onCancel={() => handleSpaceAction({ type: 'cancel' })}
+            onSwitch={(windowId) => handleSpaceAction({ type: 'switch' }, undefined, undefined, windowId)}
+            onRestore={(space) => handleSpaceAction({ type: 'restore' }, space)}
+            onDelete={(spaceId) => handleSpaceAction({ type: 'delete' }, undefined, spaceId)}
+            onEditNameChange={(name) => handleSpaceAction({ type: 'editNameChange' }, undefined, undefined, undefined, name)}
+            onMoveTabHere={(windowId) => handleSpaceAction({ type: 'moveTabHere' }, undefined, undefined, windowId)}
+            getDisplayName={getDisplayName}
+          />
+        );
+      })}
 
       {/* Closed Spaces Section */}
       {closedSpaces.length > 0 && (

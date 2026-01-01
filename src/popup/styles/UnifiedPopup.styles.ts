@@ -97,7 +97,7 @@ export const popupStyles = `
     margin-left: var(--spacing-sm);
   }
 
-  .edit-btn, .delete-btn {
+  .edit-btn, .delete-btn, .move-tab-btn {
     background: none;
     border: none;
     cursor: pointer;
@@ -108,8 +108,16 @@ export const popupStyles = `
     transition: opacity var(--transition-fast);
   }
 
-  .edit-btn:hover, .delete-btn:hover {
+  .edit-btn:hover, .delete-btn:hover, .move-tab-btn:hover {
     opacity: 1;
+  }
+
+  .move-tab-btn {
+    font-size: 16px;
+  }
+
+  .move-tab-btn:hover {
+    color: var(--primary-color);
   }
 
   .edit-input {

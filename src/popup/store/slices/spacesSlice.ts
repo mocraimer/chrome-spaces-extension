@@ -348,6 +348,20 @@ export const removeClosedSpace = createAsyncAction(
   }
 );
 
+export const MOVE_TAB_TO_SPACE = 'spaces/moveTabToSpace';
+
+export const moveTabToSpace = createAsyncAction(
+  MOVE_TAB_TO_SPACE,
+  async ({ tabId, targetWindowId }: { tabId: number; targetWindowId: number }) => {
+    const result = await chrome.runtime.sendMessage({
+      action: ActionTypes.MOVE_TAB,
+      tabId,
+      targetSpaceId: targetWindowId
+    });
+    return result;
+  }
+);
+
 // Reducer
 export default function spacesReducer(
   state = initialState,
