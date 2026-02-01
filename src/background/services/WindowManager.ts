@@ -59,10 +59,7 @@ export class WindowManager implements IWindowManager {
     }
 
     await executeChromeApi(
-      () => chrome.windows.update(windowId, {
-        focused: true,
-        state: 'normal' // Ensure window is visible
-      }),
+      () => chrome.windows.update(windowId, updateOptions),
       'WINDOW_ERROR'
     );
   }

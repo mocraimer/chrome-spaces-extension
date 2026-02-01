@@ -102,11 +102,42 @@ describe('WindowManager', () => {
   });
 
   describe('window management', () => {
-    it('should switch focus to specified window', async () => {
+    it('should switch focus to window without state property when not minimized', async () => {
+      // Default mockWindow has no state (undefined)
+      await windowManager.switchToWindow(1);
+      expect(mockChrome.windows.update).toHaveBeenCalledWith(1, {
+        focused: true
+      });
+    });
+
+    it('should restore minimized window to normal state when switching', async () => {
+      const minimizedWindow = { ...mockWindow, state: 'minimized' } as chrome.windows.Window;
+      (mockChrome.windows.get as jest.Mock).mockResolvedValue(minimizedWindow);
+
       await windowManager.switchToWindow(1);
       expect(mockChrome.windows.update).toHaveBeenCalledWith(1, {
         focused: true,
         state: 'normal'
+      });
+    });
+
+    it('should preserve maximized window state when switching', async () => {
+      const maximizedWindow = { ...mockWindow, state: 'maximized' } as chrome.windows.Window;
+      (mockChrome.windows.get as jest.Mock).mockResolvedValue(maximizedWindow);
+
+      await windowManager.switchToWindow(1);
+      expect(mockChrome.windows.update).toHaveBeenCalledWith(1, {
+        focused: true
+      });
+    });
+
+    it('should preserve fullscreen window state when switching', async () => {
+      const fullscreenWindow = { ...mockWindow, state: 'fullscreen' } as chrome.windows.Window;
+      (mockChrome.windows.get as jest.Mock).mockResolvedValue(fullscreenWindow);
+
+      await windowManager.switchToWindow(1);
+      expect(mockChrome.windows.update).toHaveBeenCalledWith(1, {
+        focused: true
       });
     });
 
