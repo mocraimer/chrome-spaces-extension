@@ -113,6 +113,8 @@ export class MessageHandler implements IMessageHandler {
         };
       case ActionTypes.MOVE_TAB:
         return this.handleMoveTab(request.tabId, request.targetSpaceId);
+      case ActionTypes.MOVE_TAB_TO_NEW_SPACE:
+        return this.handleMoveTabToNewSpace(request.tabId);
       default:
         throw createError(`Unknown action: ${request.action}`, 'INVALID_STATE');
     }
@@ -204,6 +206,67 @@ export class MessageHandler implements IMessageHandler {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private async handleMoveTabToNewSpace(tabId: number): Promise<{
+    success: boolean;
+    windowId?: number;
+    error?: string;
+  }> {
+    try {
+      // Get tab info for the space name
+      const tab = await chrome.tabs.get(tabId);
+
+      // Derive space name from tab title, truncate to 50 chars, fallback to 'New Space'
+      let spaceName = tab.title?.trim() || '';
+      if (!spaceName) {
+        spaceName = 'New Space';
+      } else if (spaceName.length > 50) {
+        spaceName = spaceName.substring(0, 50);
+      }
+
+      // Create a new window with focus
+      const newWindow = await chrome.windows.create({
+        focused: true
+      });
+
+      if (!newWindow.id) {
+        return { success: false, error: 'Failed to create window' };
+      }
+
+      const windowId = newWindow.id;
+
+      // Move the tab to the new window
+      await chrome.tabs.move(tabId, { windowId, index: 0 });
+
+      // Close the default empty tab that Chrome creates in new windows
+      const windowTabs = await chrome.tabs.query({ windowId });
+      const emptyTabs = windowTabs.filter(t =>
+        t.id !== tabId &&
+        (t.url === 'chrome://newtab/' || t.url === 'about:blank' || !t.url)
+      );
+      for (const emptyTab of emptyTabs) {
+        if (emptyTab.id) {
+          await chrome.tabs.remove(emptyTab.id);
+        }
+      }
+
+      // Create the space with name and named: true
+      await this.stateManager.createSpace(windowId, spaceName, { name: spaceName, named: true });
+
+      // Sync state
+      await this.stateManager.synchronizeWindowsAndSpaces();
+
+      console.log(`[MessageHandler] ✅ Moved tab to new space: ${spaceName} (window ID: ${windowId})`);
+
+      return { success: true, windowId };
+    } catch (error) {
+      console.error('[MessageHandler] Failed to move tab to new space:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to move tab to new space'
+      };
     }
   }
 

@@ -48,6 +48,7 @@ export const ActionTypes = {
   RESTORE_SPACE: 'restoreSpace',
   REMOVE_CLOSED_SPACE: 'removeClosedSpace',
   MOVE_TAB: 'moveTab',
+  MOVE_TAB_TO_NEW_SPACE: 'moveTabToNewSpace',
   UPDATE_SETTINGS: 'updateSettings',
   GET_SETTINGS: 'getSettings'
 } as const;

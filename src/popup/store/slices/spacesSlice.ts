@@ -362,6 +362,19 @@ export const moveTabToSpace = createAsyncAction(
   }
 );
 
+export const MOVE_TAB_TO_NEW_SPACE = 'spaces/moveTabToNewSpace';
+
+export const moveTabToNewSpace = createAsyncAction(
+  MOVE_TAB_TO_NEW_SPACE,
+  async ({ tabId }: { tabId: number }) => {
+    const result = await chrome.runtime.sendMessage({
+      action: ActionTypes.MOVE_TAB_TO_NEW_SPACE,
+      tabId
+    });
+    return result;
+  }
+);
+
 // Reducer
 export default function spacesReducer(
   state = initialState,

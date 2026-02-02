@@ -7,7 +7,8 @@ import {
   setCurrentWindow,
   setSearch,
   clearError,
-  moveTabToSpace
+  moveTabToSpace,
+  moveTabToNewSpace
 } from '../store/slices/spacesSlice';
 
 // Import new components
@@ -37,6 +38,12 @@ const UnifiedPopup: React.FC = () => {
 
   // State for auto-retry logic
   const [retryInitiated, setRetryInitiated] = useState(false);
+
+  // State for active tab pinned status
+  const [isActiveTabPinned, setIsActiveTabPinned] = useState(false);
+
+  // State for error notifications
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   // Custom hooks for functionality
   const spaceManagement = useSpaceManagement();
@@ -69,6 +76,10 @@ const UnifiedPopup: React.FC = () => {
         if (currentWindow.id) {
           dispatch(setCurrentWindow(currentWindow.id.toString()));
         }
+
+        // Check if active tab is pinned
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        setIsActiveTabPinned(activeTab?.pinned ?? false);
 
         // Fetch all spaces data from background service
         await dispatch(fetchSpaces());
@@ -130,19 +141,47 @@ const UnifiedPopup: React.FC = () => {
   }, [dispatch, navigation]);
 
   // Handle moving current tab to another space
-  const handleMoveTabToSpace = useCallback(async (targetWindowId: number) => {
+  const handleMoveTabToExistingSpace = useCallback(async (targetWindowId: number) => {
     try {
       // Get the current active tab in the current window
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!activeTab?.id) {
-        console.error('No active tab found');
+        setMoveError('No active tab found');
         return;
       }
 
-      await dispatch(moveTabToSpace({ tabId: activeTab.id, targetWindowId }));
+      const result = await dispatch(moveTabToSpace({ tabId: activeTab.id, targetWindowId }));
+      if (result.type.endsWith('/rejected') || (result.payload && !result.payload)) {
+        setMoveError('Failed to move tab to space');
+        return;
+      }
       console.log(`Moved tab ${activeTab.id} to window ${targetWindowId}`);
+      window.close();
     } catch (error) {
       console.error('Failed to move tab:', error);
+      setMoveError('Failed to move tab to space');
+    }
+  }, [dispatch]);
+
+  // Handle moving current tab to a new space
+  const handleMoveTabToNewSpace = useCallback(async () => {
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!activeTab?.id) {
+        setMoveError('No active tab found');
+        return;
+      }
+
+      const result = await dispatch(moveTabToNewSpace({ tabId: activeTab.id }));
+      if (result.type.endsWith('/rejected') || (result.payload && !result.payload.success)) {
+        setMoveError('Failed to move tab to new space');
+        return;
+      }
+      console.log(`Moved tab ${activeTab.id} to new space`);
+      window.close();
+    } catch (error) {
+      console.error('Failed to move tab to new space:', error);
+      setMoveError('Failed to move tab to new space');
     }
   }, [dispatch]);
 
@@ -180,15 +219,18 @@ const UnifiedPopup: React.FC = () => {
           spaceManagement.handleEditNameChange(action.name);
         }
         break;
-      case 'moveTabHere':
+      case 'moveToNewSpace':
+        handleMoveTabToNewSpace();
+        break;
+      case 'moveToExistingSpace':
         if (action.windowId) {
-          handleMoveTabToSpace(action.windowId);
+          handleMoveTabToExistingSpace(action.windowId);
         }
         break;
       default:
         console.warn('Unknown space action:', action);
     }
-  }, [spaceManagement, handleMoveTabToSpace]);
+  }, [spaceManagement, handleMoveTabToNewSpace, handleMoveTabToExistingSpace]);
 
   // Handle confirmation dialogs
   const handleConfirmDelete = useCallback(() => {
@@ -253,7 +295,15 @@ const UnifiedPopup: React.FC = () => {
         showConfirmDelete={spaceManagement.showConfirmDelete}
         onSpaceAction={handleSpaceAction}
         getDisplayName={getDisplayName}
+        isActiveTabPinned={isActiveTabPinned}
       />
+
+      {moveError && (
+        <div className="error-notification" data-testid="move-error-notification">
+          {moveError}
+          <button onClick={() => setMoveError(null)}>×</button>
+        </div>
+      )}
 
       <ConfirmDialog
         isOpen={!!spaceManagement.showConfirmDelete}

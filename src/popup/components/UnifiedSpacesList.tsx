@@ -1,9 +1,10 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { Space } from '@/shared/types/Space';
 import UnifiedSpaceItem from './UnifiedSpaceItem';
+import MoveTabDropdown from './MoveTabDropdown';
 
 export interface SpaceAction {
-  type: 'edit' | 'switch' | 'restore' | 'delete' | 'save' | 'cancel' | 'editNameChange' | 'moveTabHere';
+  type: 'edit' | 'switch' | 'restore' | 'delete' | 'save' | 'cancel' | 'editNameChange' | 'moveToNewSpace' | 'moveToExistingSpace';
   space?: Space;
   spaceId?: string;
   windowId?: number;
@@ -21,6 +22,8 @@ export interface SpacesListProps {
   onSpaceAction: (action: SpaceAction) => void;
   getDisplayName: (space: Space) => string;
   className?: string;
+  /** Whether the active tab is pinned (hides move dropdown) */
+  isActiveTabPinned?: boolean;
 }
 
 const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
@@ -33,7 +36,8 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
   showConfirmDelete: _showConfirmDelete,
   onSpaceAction,
   getDisplayName,
-  className = ''
+  className = '',
+  isActiveTabPinned = false
 }) => {
   const handleSpaceAction = (action: Omit<SpaceAction, 'space' | 'spaceId' | 'windowId'>, space?: Space, spaceId?: string, windowId?: number, name?: string) => {
     onSpaceAction({
@@ -44,6 +48,14 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
       name
     });
   };
+
+  const handleMoveToNewSpace = useCallback(() => {
+    onSpaceAction({ type: 'moveToNewSpace' });
+  }, [onSpaceAction]);
+
+  const handleMoveToExistingSpace = useCallback((windowId: number) => {
+    onSpaceAction({ type: 'moveToExistingSpace', windowId });
+  }, [onSpaceAction]);
 
   const totalItems = spaces.length + closedSpaces.length;
   console.log('UnifiedSpacesList rendering:', { spacesCount: spaces.length, closedSpacesCount: closedSpaces.length });
@@ -58,6 +70,9 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
     );
   }
 
+  // Get current window id as number for dropdown
+  const currentWindowIdNum = currentWindowId ? parseInt(currentWindowId, 10) : 0;
+
   return (
     <div className={`spaces-list ${className}`.trim()} data-testid="spaces-list">
       {/* Active Spaces */}
@@ -71,7 +86,6 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
             isCurrent={isCurrent}
             isEditing={editingSpaceId === space.id}
             editingName={editingName}
-            showMoveTabButton={!isCurrent && space.isActive}
             onEdit={(space) => handleSpaceAction({ type: 'edit' }, space)}
             onSave={() => handleSpaceAction({ type: 'save' })}
             onCancel={() => handleSpaceAction({ type: 'cancel' })}
@@ -79,8 +93,15 @@ const UnifiedSpacesList: React.FC<SpacesListProps> = memo(({
             onRestore={(space) => handleSpaceAction({ type: 'restore' }, space)}
             onDelete={(spaceId) => handleSpaceAction({ type: 'delete' }, undefined, spaceId)}
             onEditNameChange={(name) => handleSpaceAction({ type: 'editNameChange' }, undefined, undefined, undefined, name)}
-            onMoveTabHere={(windowId) => handleSpaceAction({ type: 'moveTabHere' }, undefined, undefined, windowId)}
             getDisplayName={getDisplayName}
+            renderActions={isCurrent && !isActiveTabPinned ? () => (
+              <MoveTabDropdown
+                spaces={spaces}
+                currentWindowId={currentWindowIdNum}
+                onMoveToNewSpace={handleMoveToNewSpace}
+                onMoveToExistingSpace={handleMoveToExistingSpace}
+              />
+            ) : undefined}
           />
         );
       })}
