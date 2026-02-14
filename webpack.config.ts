@@ -3,9 +3,11 @@ const CopyPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const config: import('webpack').Configuration = {
-  devtool: 'source-map',
-  mode: 'development', // Force development mode to disable minification
+  devtool: isProduction ? false : 'source-map',
+  mode: isProduction ? 'production' : 'development',
   entry: {
     popup: path.join(__dirname, '/src/popup/index.tsx'),
     options: path.join(__dirname, '/src/options/index.tsx'),
@@ -41,7 +43,7 @@ const config: import('webpack').Configuration = {
     },
   },
   optimization: {
-    minimize: false, // Disable minification completely
+    minimize: isProduction,
   },
   plugins: [
     new HtmlWebpackPlugin({
