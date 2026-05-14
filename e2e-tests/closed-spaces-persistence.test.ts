@@ -1,26 +1,49 @@
-import { test, expect, chromium, BrowserContext } from '@playwright/test';
+import { test, expect, chromium, BrowserContext, Page } from '@playwright/test';
+import * as fs from 'fs/promises';
 import * as path from 'path';
+import { createMockSpace, setupExtensionState } from './helpers';
 
 /**
- * Test that closed spaces are properly saved and persist across restarts
+ * Test that closed spaces are loaded from persisted storage after a browser restart.
  */
 test.describe('Closed Spaces Persistence Test', () => {
   const pathToExtension = path.join(__dirname, '..', 'build');
   const userDataDir = path.join(__dirname, '..', '.test-user-data-closed-spaces');
+  const closedSpaceId = 'closed-persistence-space';
+  const closedSpaceName = 'Persistence Test Space';
+  const closedSpaceUrls = [
+    'https://closed-persistence-primary.invalid/',
+    'https://closed-persistence-secondary.invalid/'
+  ];
 
-  test('closed spaces should be saved and persist', async () => {
-    let context: BrowserContext;
-    let extensionId: string;
+  const openPopup = async (context: BrowserContext, extensionId: string): Promise<Page> => {
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await popup.waitForLoadState('domcontentloaded');
+    await popup.waitForTimeout(500);
+    return popup;
+  };
 
-    // ========== STEP 1: Create windows ==========
-    console.log('[Test] Step 1: Creating windows');
-    context = await chromium.launchPersistentContext(userDataDir, {
+  const readClosedSpaces = async (popup: Page) => {
+    return popup.evaluate(async () => {
+      const response = await chrome.runtime.sendMessage({ action: 'getAllSpaces' });
+      return {
+        closedSpacesCount: Object.keys(response.closedSpaces || {}).length,
+        closedSpaceIds: Object.keys(response.closedSpaces || {}),
+        closedSpaceNames: Object.values(response.closedSpaces || {}).map((space: any) => space.name),
+        storage: JSON.stringify(response, null, 2).slice(0, 2000)
+      };
+    });
+  };
+
+  const launchContext = async (): Promise<{ context: BrowserContext; extensionId: string }> => {
+    const context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,
       args: [
         '--headless=new',
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
-        '--no-sandbox',
+        '--no-sandbox'
       ],
     });
 
@@ -28,116 +51,56 @@ test.describe('Closed Spaces Persistence Test', () => {
     if (!background) {
       background = await context.waitForEvent('serviceworker', { timeout: 60000 });
     }
-    extensionId = background.url().split('/')[2];
+
+    const extensionId = background.url().split('/')[2];
     console.log(`[Test] Extension loaded: ${extensionId}`);
+    return { context, extensionId };
+  };
 
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  test('closed spaces should be saved and persist', async () => {
+    await fs.rm(userDataDir, { recursive: true, force: true });
 
-    // Create windows using extension popup
-    const popup1 = await context.newPage();
-    await popup1.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup1.waitForLoadState('domcontentloaded');
+    // ========== STEP 1: Seed a closed space ==========
+    console.log('[Test] Step 1: Seeding closed space');
+    let { context, extensionId } = await launchContext();
+    let popup = await openPopup(context, extensionId);
 
-    const windowIds = await popup1.evaluate(async () => {
-      const win1 = await chrome.windows.create({ url: 'https://example.com', type: 'normal', focused: false });
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const win2 = await chrome.windows.create({ url: 'https://github.com', type: 'normal', focused: false });
-      await new Promise(resolve => setTimeout(resolve, 500));
+    const testSpace = createMockSpace(closedSpaceId, closedSpaceName, closedSpaceUrls);
+    await setupExtensionState(popup, { closedSpaces: { [closedSpaceId]: testSpace } });
+    await popup.reload();
+    await popup.waitForLoadState('domcontentloaded');
 
-      return [win1.id, win2.id];
-    });
-
-    console.log(`[Test] Created windows: ${windowIds.join(', ')}`);
-    await popup1.close();
-
-    // Wait for extension to register
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // ========== STEP 2: Close windows explicitly (not context) ==========
-    console.log('[Test] Step 2: Closing windows explicitly');
-    const popup2 = await context.newPage();
-    await popup2.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup2.waitForLoadState('domcontentloaded');
-
-    await popup2.evaluate(async ([wid1, wid2]) => {
-      console.log(`[Test] Closing window ${wid1}`);
-      await chrome.windows.remove(wid1);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      console.log(`[Test] Closing window ${wid2}`);
-      await chrome.windows.remove(wid2);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }, windowIds);
-
-    console.log('[Test] Windows closed, waiting for saves to complete');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // ========== STEP 3: Verify closed spaces are in storage ==========
-    console.log('[Test] Step 3: Verifying closed spaces in storage');
-    const storageBeforeRestart = await popup2.evaluate(async () => {
-      const response = await chrome.runtime.sendMessage({ action: 'spaces/fetchAll' });
-      return {
-        closedSpacesCount: Object.keys(response.closedSpaces || {}).length,
-        closedSpaceIds: Object.keys(response.closedSpaces || {}),
-        storage: JSON.stringify(response, null, 2).slice(0, 2000)
-      };
-    });
+    // ========== STEP 2: Verify closed space is in storage ==========
+    console.log('[Test] Step 2: Verifying closed space in storage');
+    const storageBeforeRestart = await readClosedSpaces(popup);
 
     console.log('[Test] Storage before restart:', storageBeforeRestart);
+    expect(storageBeforeRestart.closedSpaceIds).toContain(closedSpaceId);
+    expect(storageBeforeRestart.closedSpaceNames).toContain(closedSpaceName);
 
-    // Assert that closed spaces were saved
-    expect(storageBeforeRestart.closedSpacesCount).toBeGreaterThan(0);
-    console.log(`[Test] ✅ Found ${storageBeforeRestart.closedSpacesCount} closed spaces in storage`);
+    await popup.close();
 
-    await popup2.close();
-
-    // ========== STEP 4: Restart browser ==========
-    console.log('[Test] Step 4: Restarting browser');
+    // ========== STEP 3: Restart browser ==========
+    console.log('[Test] Step 3: Restarting browser');
     await context.close();
 
-    context = await chromium.launchPersistentContext(userDataDir, {
-      headless: false,
-      args: [
-        '--headless=new',
-        `--disable-extensions-except=${pathToExtension}`,
-        `--load-extension=${pathToExtension}`,
-        '--no-sandbox',
-      ],
-    });
-
-    [background] = context.serviceWorkers();
-    if (!background) {
-      background = await context.waitForEvent('serviceworker', { timeout: 60000 });
-    }
-    extensionId = background.url().split('/')[2];
-
+    ({ context, extensionId } = await launchContext());
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // ========== STEP 5: Verify closed spaces still in storage ==========
-    console.log('[Test] Step 5: Verifying closed spaces persisted');
-    const popup3 = await context.newPage();
-    await popup3.goto(`chrome-extension://${extensionId}/popup.html`);
-    await popup3.waitForLoadState('domcontentloaded');
-    await popup3.waitForTimeout(2000);
-
-    const storageAfterRestart = await popup3.evaluate(async () => {
-      const response = await chrome.runtime.sendMessage({ action: 'spaces/fetchAll' });
-      return {
-        closedSpacesCount: Object.keys(response.closedSpaces || {}).length,
-        closedSpaceIds: Object.keys(response.closedSpaces || {}),
-        storage: JSON.stringify(response, null, 2).slice(0, 2000)
-      };
-    });
+    // ========== STEP 4: Verify closed space persisted ==========
+    console.log('[Test] Step 4: Verifying closed space persisted');
+    popup = await openPopup(context, extensionId);
+    const storageAfterRestart = await readClosedSpaces(popup);
 
     console.log('[Test] Storage after restart:', storageAfterRestart);
-
-    // Assert closed spaces persisted
-    expect(storageAfterRestart.closedSpacesCount).toBeGreaterThan(0);
     expect(storageAfterRestart.closedSpacesCount).toBe(storageBeforeRestart.closedSpacesCount);
+    expect(storageAfterRestart.closedSpaceIds).toContain(closedSpaceId);
+    expect(storageAfterRestart.closedSpaceNames).toContain(closedSpaceName);
 
-    console.log(`[Test] ✅ ${storageAfterRestart.closedSpacesCount} closed spaces persisted across restart!`);
+    console.log(`[Test] ✅ Closed space "${closedSpaceName}" persisted across restart`);
 
-    await popup3.close();
+    await popup.close();
     await context.close();
+    await fs.rm(userDataDir, { recursive: true, force: true });
   });
 });

@@ -257,6 +257,10 @@ export class StateManager implements IStateManager {
       // Use lower threshold for named spaces only if there's content overlap
       // This protects named spaces from being lost but prevents random matches
       const hasContentMatch = (breakdown.url > 0 || breakdown.domain > 0);
+      if (!space.isActive && !hasContentMatch) {
+        continue;
+      }
+
       const minScore = (space.named && hasContentMatch)
         ? StateManager.CONFIG.MIN_MATCH_SCORE_NAMED
         : StateManager.CONFIG.MIN_MATCH_SCORE;
@@ -1125,32 +1129,106 @@ export class StateManager implements IStateManager {
     // PHASE 2: Handle orphaned spaces (no matching window)
     // =========================================================================
 
+    // Collect orphaned spaces for processing without mutating in-memory state yet.
+    const orphanedNamedSpaces: Array<{ permId: string; space: Space }> = [];
+    const orphanedUnnamedSpaces: Array<{ permId: string }> = [];
+
     for (const [permId, space] of Object.entries(this.spaces)) {
       if (!activePermIds.has(permId)) {
         if (space.named) {
-          // Move named spaces to closedSpaces - CRITICAL: preserve name and named flag
-          console.log(`[StateManager] 📦 Moving orphaned named space "${space.name}" to closed`);
-          this.closedSpaces[permId] = {
-            ...space,
-            // Explicitly preserve identity fields
-            name: space.name,
-            named: space.named,
-            permanentId: space.permanentId,
-            isActive: false,
-            windowId: undefined,
-            lastModified: now,
-            lastSync: now,
-            version: space.version + 1
-          };
+          orphanedNamedSpaces.push({ permId, space });
         } else {
-          console.log(`[StateManager] 🗑️ Discarding orphaned unnamed space (${permId})`);
+          orphanedUnnamedSpaces.push({ permId });
         }
-        delete this.spaces[permId];
       }
     }
 
-    // Save the updated state
-    await this.storageManager.saveState(this.spaces, this.closedSpaces);
+    const closedSpacesUpdates: Array<{ permId: string; closedSpace: Space; urls: string[] }> = [];
+
+    for (const { permId, space } of orphanedNamedSpaces) {
+      console.log(`[StateManager] 📦 Preparing orphaned named space "${space.name}" for closure`);
+
+      const activeTabs = await this.storageManager.loadTabsForSpace(permId, 'active') || [];
+      let urls: string[] = activeTabs
+        .map(tab => tab.url)
+        .filter((url): url is string => !!url && !url.startsWith('chrome://'));
+
+      if (urls.length === 0 && space.urls && space.urls.length > 0) {
+        console.log(`[StateManager] Using existing space URLs as fallback: ${space.urls.length} tabs`);
+        urls = space.urls;
+      }
+
+      const closedSpace: Space = {
+        ...space,
+        name: space.name,
+        named: space.named,
+        permanentId: space.permanentId,
+        urls,
+        isActive: false,
+        windowId: undefined,
+        lastModified: now,
+        lastSync: now,
+        version: space.version + 1
+      };
+
+      closedSpacesUpdates.push({ permId, closedSpace, urls });
+    }
+
+    const nextSpaces = { ...this.spaces };
+    const nextClosedSpaces = { ...this.closedSpaces };
+
+    for (const { permId, closedSpace } of closedSpacesUpdates) {
+      nextClosedSpaces[permId] = closedSpace;
+      delete nextSpaces[permId];
+    }
+
+    for (const { permId } of orphanedUnnamedSpaces) {
+      delete nextSpaces[permId];
+    }
+
+    // Persist closed tabs and state before swapping memory. If either critical
+    // save fails, the current in-memory state remains available for retry.
+    try {
+      for (const { permId, urls } of closedSpacesUpdates) {
+        await this.storageManager.saveTabsForSpace(
+          permId,
+          'closed',
+          urls.map((url, index) => ({
+            id: generateUUID('tab'),
+            spaceId: permId,
+            kind: 'closed' as const,
+            url,
+            index,
+            createdAt: Date.now()
+          }))
+        );
+      }
+
+      await this.storageManager.saveState(nextSpaces, nextClosedSpaces);
+    } catch (error) {
+      console.error('[StateManager] Failed to persist orphaned space transition; in-memory state unchanged:', error);
+      throw error;
+    }
+
+    this.spaces = nextSpaces;
+    this.closedSpaces = nextClosedSpaces;
+
+    try {
+      for (const { permId } of closedSpacesUpdates) {
+        await this.storageManager.deleteTabsForSpace(permId, 'active');
+      }
+
+      for (const { permId } of orphanedUnnamedSpaces) {
+        console.log(`[StateManager] 🗑️ Discarding orphaned unnamed space (${permId})`);
+        await this.storageManager.deleteTabsForSpace(permId, 'active');
+      }
+    } catch (error) {
+      console.warn('[StateManager] Failed to delete stale active tabs after orphaned space transition:', error);
+    }
+
+    for (const { closedSpace } of closedSpacesUpdates) {
+      console.log(`[StateManager] Transitioned tabs for orphaned space "${closedSpace.name}": ${closedSpace.urls.length} tabs`);
+    }
 
     // Queue the state update for broadcasting
     await this.updateQueue.enqueue({

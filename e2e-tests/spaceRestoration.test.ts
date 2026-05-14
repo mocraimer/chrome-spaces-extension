@@ -1,4 +1,6 @@
 import { test, expect, chromium, BrowserContext, Page } from '@playwright/test';
+import * as fs from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { setupExtensionState, createMockSpace, verifyExtensionState } from './helpers';
 import type { Space } from '../src/shared/types/Space';
@@ -15,10 +17,33 @@ import type { Space } from '../src/shared/types/Space';
 test.describe('Space Restoration E2E Tests - New Chrome API', () => {
   let context: BrowserContext;
   let extensionId: string;
+  let userDataDir: string;
   const pathToExtension = path.join(__dirname, '..', 'build');
+  const normalizeUrl = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.replace(/^www\./, '');
+      const path = parsed.pathname.replace(/\/$/, '');
+      return `${parsed.protocol}//${host}${path}`;
+    } catch {
+      return url.replace(/\/$/, '');
+    }
+  };
+
+  const getOpenHttpUrls = async (page: Page): Promise<string[]> => {
+    const urls = await page.evaluate(async () => {
+      const tabs = await chrome.tabs.query({});
+      return tabs.map(tab => tab.url || '');
+    });
+
+    return urls
+      .filter(url => url.startsWith('http'))
+      .map(normalizeUrl);
+  };
 
   test.beforeAll(async () => {
-    context = await chromium.launchPersistentContext('', {
+    userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chrome-spaces-space-restoration-'));
+    context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,  // Must be false when using --headless=new
       args: [
         '--headless=new',  // CRITICAL: Use new headless mode for extension support
@@ -43,6 +68,7 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
 
   test.afterAll(async () => {
     await context.close();
+    await fs.rm(userDataDir, { recursive: true, force: true });
   });
 
   const openPopup = async (): Promise<Page> => {
@@ -58,15 +84,21 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
   };
 
   test('should successfully restore a space with multiple tabs', async () => {
-    const page = await openPopup();
+    const testUrls = [
+      'https://space-restoration-primary.invalid/',
+      'https://space-restoration-secondary.invalid/',
+      'https://space-restoration-tertiary.invalid/'
+    ];
+
     // Create a test space with multiple tabs
-    const testSpace = createMockSpace('space-1', 'Multi-Tab Space', [
-      'https://example.com',
-      'https://github.com',
-      'https://google.com'
-    ]);
-    await setupExtensionState(page, { closedSpaces: { 'space-1': testSpace } });
-    await page.reload();
+    const testSpace = createMockSpace('space-1', 'Multi-Tab Space', testUrls);
+    const setupPage = await context.newPage();
+    await setupPage.goto(`chrome-extension://${extensionId}/options.html`);
+    await setupPage.waitForLoadState('domcontentloaded');
+    await setupExtensionState(setupPage, { closedSpaces: { 'space-1': testSpace } });
+    await setupPage.close();
+
+    const page = await openPopup();
 
     // Wait for spaces to load
     await expect(page.locator('.loading')).not.toBeVisible();
@@ -85,15 +117,11 @@ test.describe('Space Restoration E2E Tests - New Chrome API', () => {
     // Click restore button
     await page.click('[data-testid="space-item-space-1"]');
 
-    // Wait for all tabs to be created
-    const pages = context.pages();
-    await expect(pages.length).toBe(3);
-
-    // Verify all tabs were restored
-    const urls = pages.map(p => p.url());
-    expect(urls).toContain('https://example.com');
-    expect(urls).toContain('https://github.com');
-    expect(urls).toContain('https://google.com');
+    // Verify all tabs were restored. Use Chrome's tabs API because extension-created
+    // tabs are not always reflected in Playwright's context.pages() synchronously.
+    await expect.poll(async () => getOpenHttpUrls(page)).toEqual(
+      expect.arrayContaining(testUrls.map(normalizeUrl))
+    );
   });
 
   test('should handle concurrent space restorations', async () => {

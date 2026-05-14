@@ -623,6 +623,59 @@ describe('StateManager', () => {
       expect(savedClosedSpaces[closedPermId].name).toBe('My Other Work');
     });
 
+    it('does NOT match inactive space by tab count and bounds without content overlap', async () => {
+      const closedPermId = 'perm-closed-bounds-only';
+      const unrelatedTabs = [
+        { ...mockTab, id: 1, index: 0, url: 'https://open-one.com' },
+        { ...mockTab, id: 2, index: 1, url: 'https://open-two.com' },
+        { ...mockTab, id: 3, index: 2, url: 'https://open-three.com' }
+      ] as chrome.tabs.Tab[];
+      const windowWithSameShape: chrome.windows.Window = {
+        ...mockWindow,
+        tabs: unrelatedTabs,
+        left: 10,
+        top: 10,
+        width: 1200,
+        height: 800
+      };
+      const closedSpace = createMockSpace(closedPermId, 'Bounds Only Closed Space', {
+        isActive: false,
+        windowId: undefined,
+        version: 5,
+        named: true,
+        urls: [
+          'https://closed-one.invalid/',
+          'https://closed-two.invalid/',
+          'https://closed-three.invalid/'
+        ],
+        lastKnownBounds: {
+          left: 10,
+          top: 10,
+          width: 1200,
+          height: 800,
+          state: 'normal'
+        },
+        sourceWindowId: 'old-window-999'
+      });
+
+      windowManager.getAllWindows.mockResolvedValue([windowWithSameShape]);
+      tabManager.getTabs.mockResolvedValue(unrelatedTabs);
+      tabManager.getTabUrl.mockImplementation((tab: chrome.tabs.Tab) => tab.url || '');
+      storageManager.loadSpaces.mockResolvedValue({});
+      storageManager.loadClosedSpaces.mockResolvedValue({ [closedPermId]: closedSpace });
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      const call = (storageManager.saveState as jest.Mock).mock.calls[0];
+      const savedSpaces = call[0];
+      const savedClosedSpaces = call[1];
+
+      expect(savedSpaces[closedPermId]).toBeUndefined();
+      expect(savedClosedSpaces[closedPermId]).toBeDefined();
+      expect(savedClosedSpaces[closedPermId].name).toBe('Bounds Only Closed Space');
+    });
+
     it('preserves named spaces when validation fails due to URL mismatch', async () => {
       const namedPermId = 'perm-mywork';
       const namedSpace = createMockSpace(namedPermId, 'My Work', {
@@ -738,6 +791,235 @@ describe('StateManager', () => {
       const spaces = stateManager.getAllSpaces();
       // After init, spaces should be reset to inactive
       expect(Object.keys(spaces).length).toBe(1);
+    });
+
+    it('transitions tabs from active to closed kind when orphaned named space is moved to closedSpaces', async () => {
+      const orphanedPermId = 'perm-orphan-tabs';
+      const orphanedSpace = createMockSpace(orphanedPermId, 'Space With Tabs', {
+        isActive: true,
+        windowId: 888,
+        sourceWindowId: '888',
+        lastModified: Date.now(),
+        lastSync: Date.now(),
+        version: 2,
+        named: true,
+        urls: ['https://tab1.com', 'https://tab2.com']
+      });
+
+      const otherTab: chrome.tabs.Tab = {
+        id: 999,
+        index: 0,
+        windowId: 99,
+        highlighted: false,
+        active: true,
+        pinned: false,
+        incognito: false,
+        selected: false,
+        autoDiscardable: true,
+        discarded: false,
+        url: 'https://other.com',
+        title: 'Other Tab',
+        groupId: -1
+      };
+
+      const otherWindow: chrome.windows.Window = {
+        id: 99,
+        focused: true,
+        alwaysOnTop: false,
+        incognito: false,
+        type: 'normal',
+        tabs: [otherTab]
+      };
+
+      const mockActiveTabs = [
+        { id: 'tab-1', spaceId: orphanedPermId, kind: 'active' as const, url: 'https://tab1.com', index: 0, createdAt: Date.now() },
+        { id: 'tab-2', spaceId: orphanedPermId, kind: 'active' as const, url: 'https://tab2.com', index: 1, createdAt: Date.now() }
+      ];
+
+      windowManager.getAllWindows.mockResolvedValue([otherWindow]);
+      tabManager.getTabs.mockResolvedValue([otherTab]);
+      tabManager.getTabUrl.mockImplementation((tab: chrome.tabs.Tab) => tab.url || '');
+
+      storageManager.loadSpaces.mockResolvedValue({ [orphanedPermId]: orphanedSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      (storageManager as any).loadTabsForSpace = jest.fn().mockImplementation((spaceId: string, kind: string) => {
+        if (spaceId === orphanedPermId && kind === 'active') {
+          return Promise.resolve(mockActiveTabs);
+        }
+        return Promise.resolve([]);
+      });
+      (storageManager as any).saveTabsForSpace = jest.fn().mockResolvedValue(undefined);
+      (storageManager as any).deleteTabsForSpace = jest.fn().mockResolvedValue(undefined);
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      expect((storageManager as any).saveTabsForSpace).toHaveBeenCalledWith(
+        orphanedPermId,
+        'closed',
+        expect.arrayContaining([
+          expect.objectContaining({ url: 'https://tab1.com', kind: 'closed' }),
+          expect.objectContaining({ url: 'https://tab2.com', kind: 'closed' })
+        ])
+      );
+      expect((storageManager as any).deleteTabsForSpace).toHaveBeenCalledWith(orphanedPermId, 'active');
+      expect(storageManager.saveState).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          [orphanedPermId]: expect.objectContaining({
+            isActive: false,
+            windowId: undefined,
+            named: true,
+            name: 'Space With Tabs',
+            urls: ['https://tab1.com', 'https://tab2.com']
+          })
+        })
+      );
+    });
+
+    it('keeps orphaned space in memory when the closed-space state save fails', async () => {
+      const orphanedPermId = 'perm-orphan-save-fails';
+      const orphanedSpace = createMockSpace(orphanedPermId, 'Save Failure Space', {
+        isActive: true,
+        windowId: 888,
+        sourceWindowId: '888',
+        lastModified: Date.now(),
+        lastSync: Date.now(),
+        version: 2,
+        named: true,
+        urls: ['https://kept-active.com']
+      });
+
+      const otherTab: chrome.tabs.Tab = {
+        id: 999,
+        index: 0,
+        windowId: 99,
+        highlighted: false,
+        active: true,
+        pinned: false,
+        incognito: false,
+        selected: false,
+        autoDiscardable: true,
+        discarded: false,
+        url: 'https://other.com',
+        title: 'Other Tab',
+        groupId: -1
+      };
+
+      const otherWindow: chrome.windows.Window = {
+        id: 99,
+        focused: true,
+        alwaysOnTop: false,
+        incognito: false,
+        type: 'normal',
+        tabs: [otherTab]
+      };
+
+      windowManager.getAllWindows.mockResolvedValue([otherWindow]);
+      tabManager.getTabs.mockResolvedValue([otherTab]);
+      tabManager.getTabUrl.mockImplementation((tab: chrome.tabs.Tab) => tab.url || '');
+
+      storageManager.loadSpaces.mockResolvedValue({ [orphanedPermId]: orphanedSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+      storageManager.saveState.mockRejectedValueOnce(new Error('state write failed'));
+
+      (storageManager as any).loadTabsForSpace = jest.fn().mockResolvedValue([
+        {
+          id: 'tab-1',
+          spaceId: orphanedPermId,
+          kind: 'active' as const,
+          url: 'https://kept-active.com',
+          index: 0,
+          createdAt: Date.now()
+        }
+      ]);
+      (storageManager as any).saveTabsForSpace = jest.fn().mockResolvedValue(undefined);
+      (storageManager as any).deleteTabsForSpace = jest.fn().mockResolvedValue(undefined);
+
+      await stateManager.initialize();
+      await expect(stateManager.synchronizeWindowsAndSpaces()).rejects.toThrow('state write failed');
+
+      expect(stateManager.getAllSpaces()[orphanedPermId]).toBeDefined();
+      expect(stateManager.getClosedSpaces()[orphanedPermId]).toBeUndefined();
+      expect((storageManager as any).deleteTabsForSpace).not.toHaveBeenCalled();
+    });
+
+    it('space can be restored with tabs after sync-based closure', async () => {
+      const orphanedPermId = 'perm-restore-after-sync';
+      const orphanedSpace = createMockSpace(orphanedPermId, 'Restorable Space', {
+        isActive: true,
+        windowId: 777,
+        sourceWindowId: '777',
+        lastModified: Date.now(),
+        lastSync: Date.now(),
+        version: 2,
+        named: true,
+        urls: ['https://restore1.com', 'https://restore2.com']
+      });
+
+      const mockActiveTabs = [
+        { id: 'tab-1', spaceId: orphanedPermId, kind: 'active' as const, url: 'https://restore1.com', index: 0, createdAt: Date.now() },
+        { id: 'tab-2', spaceId: orphanedPermId, kind: 'active' as const, url: 'https://restore2.com', index: 1, createdAt: Date.now() }
+      ];
+
+      const otherWindow: chrome.windows.Window = {
+        id: 50,
+        focused: true,
+        alwaysOnTop: false,
+        incognito: false,
+        type: 'normal',
+        tabs: [{
+          id: 500,
+          index: 0,
+          windowId: 50,
+          highlighted: false,
+          active: true,
+          pinned: false,
+          incognito: false,
+          selected: false,
+          autoDiscardable: true,
+          discarded: false,
+          url: 'https://other.com',
+          title: 'Other',
+          groupId: -1
+        }]
+      };
+
+      windowManager.getAllWindows.mockResolvedValue([otherWindow]);
+      tabManager.getTabs.mockResolvedValue(otherWindow.tabs!);
+      tabManager.getTabUrl.mockImplementation((tab: chrome.tabs.Tab) => tab.url || '');
+
+      storageManager.loadSpaces.mockResolvedValue({ [orphanedPermId]: orphanedSpace });
+      storageManager.loadClosedSpaces.mockResolvedValue({});
+
+      let savedClosedTabs: any[] = [];
+
+      (storageManager as any).loadTabsForSpace = jest.fn().mockImplementation((spaceId: string, kind: string) => {
+        if (spaceId === orphanedPermId && kind === 'active') {
+          return Promise.resolve(mockActiveTabs);
+        }
+        if (spaceId === orphanedPermId && kind === 'closed') {
+          return Promise.resolve(savedClosedTabs);
+        }
+        return Promise.resolve([]);
+      });
+
+      (storageManager as any).saveTabsForSpace = jest.fn().mockImplementation((spaceId: string, kind: string, tabs: any[]) => {
+        if (kind === 'closed') {
+          savedClosedTabs = tabs;
+        }
+        return Promise.resolve();
+      });
+      (storageManager as any).deleteTabsForSpace = jest.fn().mockResolvedValue(undefined);
+
+      await stateManager.initialize();
+      await stateManager.synchronizeWindowsAndSpaces();
+
+      const closedTabs = await (storageManager as any).loadTabsForSpace(orphanedPermId, 'closed');
+      expect(closedTabs.length).toBe(2);
+      expect(closedTabs[0].url).toBe('https://restore1.com');
+      expect(closedTabs[1].url).toBe('https://restore2.com');
     });
   });
 
