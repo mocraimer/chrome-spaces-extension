@@ -14,7 +14,7 @@ export interface WindowBounds {
  */
 export interface Space {
   id: string;
-  name: string;               // Display name (user's custom name when named=true, auto-generated when named=false)
+  name: string;               // Display name (user's custom name when named=true, default name when named=false)
   urls: string[];
   lastModified: number;
   named: boolean;             // True if user explicitly set the name

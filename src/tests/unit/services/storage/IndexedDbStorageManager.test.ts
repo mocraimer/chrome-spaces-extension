@@ -458,7 +458,7 @@ describe('IndexedDbStorageManager', () => {
       expect(tabs[1].url).toBe('https://example.com/2');
     });
 
-    it('should create space with auto-generated name', async () => {
+    it('should create space with default name', async () => {
       const space = await storageManager.createSpace(456, 'Default Space', ['https://example.com'], false);
 
       expect(space.named).toBe(false);
@@ -613,4 +613,3 @@ describe('IndexedDbStorageManager', () => {
     });
   });
 });
-

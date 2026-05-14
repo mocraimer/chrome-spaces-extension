@@ -215,17 +215,6 @@ export class MessageHandler implements IMessageHandler {
     error?: string;
   }> {
     try {
-      // Get tab info for the space name
-      const tab = await chrome.tabs.get(tabId);
-
-      // Derive space name from tab title, truncate to 50 chars, fallback to 'New Space'
-      let spaceName = tab.title?.trim() || '';
-      if (!spaceName) {
-        spaceName = 'New Space';
-      } else if (spaceName.length > 50) {
-        spaceName = spaceName.substring(0, 50);
-      }
-
       // Create a new window with focus
       const newWindow = await chrome.windows.create({
         focused: true
@@ -252,13 +241,14 @@ export class MessageHandler implements IMessageHandler {
         }
       }
 
-      // Create the space with name and named: true
-      await this.stateManager.createSpace(windowId, spaceName, { name: spaceName, named: true });
+      // Use the normal default name. Space names should only become custom
+      // names after an explicit rename.
+      await this.stateManager.createSpace(windowId);
 
       // Sync state
       await this.stateManager.synchronizeWindowsAndSpaces();
 
-      console.log(`[MessageHandler] ✅ Moved tab to new space: ${spaceName} (window ID: ${windowId})`);
+      console.log(`[MessageHandler] ✅ Moved tab to new space (window ID: ${windowId})`);
 
       return { success: true, windowId };
     } catch (error) {
